@@ -211,6 +211,31 @@ export default function MemesScreen() {
     }
   };
 
+  const deleteMeme = async (meme: Meme) => {
+    Alert.alert(
+      "Delete Meme",
+      `Are you sure you want to delete "${meme.name}"?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await axios.delete(`${API_URL}/api/memes/${meme.id}`);
+              setMemes(memes.filter((m) => m.id !== meme.id));
+              setSelectedMeme(null);
+              Alert.alert("Deleted!", "Meme has been removed");
+            } catch (error) {
+              console.error("Error deleting:", error);
+              Alert.alert("Error", "Failed to delete meme");
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const renderMemeItem = ({ item }: { item: Meme }) => (
     <TouchableOpacity
       style={styles.memeItem}
@@ -408,6 +433,14 @@ export default function MemesScreen() {
                     <Ionicons name="download-outline" size={24} color="#fff" />
                     <Text style={styles.actionButtonText}>Save</Text>
                   </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.actionButton, styles.deleteButton]}
+                    onPress={() => deleteMeme(selectedMeme)}
+                  >
+                    <Ionicons name="trash-outline" size={24} color="#E74C3C" />
+                    <Text style={[styles.actionButtonText, { color: "#E74C3C" }]}>Delete</Text>
+                  </TouchableOpacity>
                 </View>
               </>
             )}
@@ -600,15 +633,19 @@ const styles = StyleSheet.create({
   },
   actionButton: {
     alignItems: "center",
-    padding: 12,
+    padding: 8,
   },
   actionButtonActive: {
     backgroundColor: "rgba(255, 107, 53, 0.1)",
     borderRadius: 12,
   },
+  deleteButton: {
+    backgroundColor: "rgba(231, 76, 60, 0.1)",
+    borderRadius: 12,
+  },
   actionButtonText: {
     color: "#fff",
-    fontSize: 12,
+    fontSize: 11,
     marginTop: 4,
   },
 });
