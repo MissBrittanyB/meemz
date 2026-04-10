@@ -22,7 +22,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || "";
 
 // Admin password - change this to your desired password
-const ADMIN_PASSWORD = "memevault2024";
+const ADMIN_PASSWORD = "Marchelle7!";
 
 interface Category {
   id: string;

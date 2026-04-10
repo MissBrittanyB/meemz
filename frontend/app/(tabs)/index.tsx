@@ -155,7 +155,7 @@ export default function MemesScreen() {
 
       if (Platform.OS === "web") {
         // Web: Try native share API, fallback to download
-        if (navigator.share && navigator.canShare) {
+        if (typeof navigator !== 'undefined' && navigator.share && navigator.canShare) {
           // Convert base64 to blob for web sharing
           const base64Data = meme.image_base64.replace(/^data:image\/\w+;base64,/, "");
           const byteCharacters = atob(base64Data);
@@ -172,48 +172,72 @@ export default function MemesScreen() {
               files: [file],
               title: meme.name,
             });
-          } catch {
-            // Fallback to download
-            const link = document.createElement("a");
-            link.href = meme.image_base64;
-            link.download = `meme_${meme.id}.png`;
-            link.click();
-            window.alert("Meme downloaded! You can now share it from your downloads.");
+            return;
+          } catch (shareError) {
+            console.log("Native share failed, falling back to download");
           }
-        } else {
-          // Direct download fallback
-          const link = document.createElement("a");
-          link.href = meme.image_base64;
-          link.download = `meme_${meme.id}.png`;
-          link.click();
-          window.alert("Meme downloaded! You can now share it from your downloads.");
         }
+        // Direct download fallback for web
+        const link = document.createElement("a");
+        link.href = meme.image_base64;
+        link.download = `MemeVault_${meme.id}.png`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.alert("Meme downloaded! You can now share it from your downloads.");
       } else {
         // Mobile: Use native sharing
-        const base64Data = meme.image_base64.replace(/^data:image\/\w+;base64,/, "");
-        const fileUri = FileSystem.cacheDirectory + `meme_${meme.id}.png`;
+        try {
+          const base64Data = meme.image_base64.replace(/^data:image\/\w+;base64,/, "");
+          const cacheDir = FileSystem.cacheDirectory;
+          
+          if (!cacheDir) {
+            // Fallback to Share API with URL
+            await Share.share({
+              message: `Check out this meme from MemeVault!`,
+              url: meme.image_base64,
+            });
+            return;
+          }
+          
+          const fileUri = `${cacheDir}meme_${meme.id}.png`;
 
-        await FileSystem.writeAsStringAsync(fileUri, base64Data, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
+          await FileSystem.writeAsStringAsync(fileUri, base64Data, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
 
-        if (await Sharing.isAvailableAsync()) {
-          await Sharing.shareAsync(fileUri, {
-            mimeType: "image/png",
-            dialogTitle: "Share Meme to Messages, Instagram, WhatsApp...",
-          });
-        } else {
-          await Share.share({
-            message: `Check out this meme: ${meme.name}`,
-          });
+          const isSharingAvailable = await Sharing.isAvailableAsync();
+          
+          if (isSharingAvailable) {
+            await Sharing.shareAsync(fileUri, {
+              mimeType: "image/png",
+              dialogTitle: "Share Meme",
+              UTI: "public.png",
+            });
+          } else {
+            // Fallback for devices where sharing isn't available
+            await Share.share({
+              message: `Check out this meme from MemeVault!`,
+            });
+          }
+        } catch (mobileError) {
+          console.error("Mobile share error:", mobileError);
+          // Try basic share as last resort
+          try {
+            await Share.share({
+              message: `Check out this meme from MemeVault!`,
+            });
+          } catch (basicError) {
+            Alert.alert("Share Error", "Unable to share. Try saving the meme first, then share from your photos.");
+          }
         }
       }
     } catch (error) {
       console.error("Error sharing:", error);
       if (Platform.OS === "web") {
-        window.alert("Failed to share meme");
+        window.alert("Failed to share meme. Try the Save button instead.");
       } else {
-        Alert.alert("Error", "Failed to share meme");
+        Alert.alert("Error", "Failed to share meme. Try saving it first.");
       }
     }
   };
