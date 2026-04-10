@@ -108,7 +108,7 @@ async def delete_category(category_id: str):
 async def get_memes(
     search: Optional[str] = None,
     category: Optional[str] = None,
-    limit: int = 100,
+    limit: int = 500,
     skip: int = 0
 ):
     """Get memes with optional filters"""
