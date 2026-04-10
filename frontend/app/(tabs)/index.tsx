@@ -24,8 +24,11 @@ import GradientText from "../../utils/GradientText";
 import { requireAuth } from "../../utils/authGate";
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || "";
-const { width } = Dimensions.get("window");
-const MEME_SIZE = (width - 48) / 3;
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
+const NUM_COLUMNS = 3;
+const GRID_PADDING = 8;
+const ITEM_SPACING = 2;
+const MEME_SIZE = Math.floor((SCREEN_WIDTH - GRID_PADDING * 2 - ITEM_SPACING * (NUM_COLUMNS - 1) * 2) / NUM_COLUMNS);
 
 interface Meme {
   id: string;
@@ -77,17 +80,22 @@ export default function MemesScreen() {
     initDeviceId();
   }, []);
 
-  const PAGE_SIZE = 20;
+  const PAGE_SIZE = 12; // 4 rows of 3 = 12 memes per page (keeps payload smaller)
   const skipRef = useRef(0);
+
+  const hasMoreRef = useRef(true);
+  const loadingMoreRef = useRef(false);
 
   const fetchMemes = useCallback(async (reset = true) => {
     try {
       if (reset) {
         setLoading(true);
+        hasMoreRef.current = true;
         setHasMore(true);
         skipRef.current = 0;
       } else {
-        if (!hasMore || loadingMore) return;
+        if (!hasMoreRef.current || loadingMoreRef.current) return;
+        loadingMoreRef.current = true;
         setLoadingMore(true);
       }
 
@@ -99,6 +107,7 @@ export default function MemesScreen() {
       const newMemes = response.data;
 
       if (newMemes.length < PAGE_SIZE) {
+        hasMoreRef.current = false;
         setHasMore(false);
       }
 
@@ -113,6 +122,7 @@ export default function MemesScreen() {
       console.error("Error fetching memes:", error);
     } finally {
       setLoading(false);
+      loadingMoreRef.current = false;
       setLoadingMore(false);
     }
   }, [searchQuery, selectedCategory]);
@@ -164,7 +174,7 @@ export default function MemesScreen() {
   };
 
   const loadMoreMemes = () => {
-    if (hasMore && !loadingMore) {
+    if (hasMoreRef.current && !loadingMoreRef.current) {
       fetchMemes(false);
     }
   };
@@ -365,6 +375,15 @@ export default function MemesScreen() {
             loadingMore ? (
               <View style={{ paddingVertical: 20, alignItems: "center" }}>
                 <ActivityIndicator size="small" color="#FF7A1A" />
+                <Text style={{ color: "#666", fontSize: 12, marginTop: 8 }}>Loading more meemz...</Text>
+              </View>
+            ) : hasMore ? (
+              <View style={{ paddingVertical: 20, alignItems: "center" }}>
+                <Text style={{ color: "#444", fontSize: 12 }}>Scroll for more meemz</Text>
+              </View>
+            ) : memes.length > 0 ? (
+              <View style={{ paddingVertical: 20, alignItems: "center" }}>
+                <Text style={{ color: "#444", fontSize: 12 }}>All {memes.length} meemz loaded</Text>
               </View>
             ) : null
           }
@@ -604,14 +623,14 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   memesGrid: {
-    padding: 16,
+    padding: GRID_PADDING,
     paddingBottom: 100,
   },
   memeItem: {
     width: MEME_SIZE,
     height: MEME_SIZE,
-    margin: 4,
-    borderRadius: 8,
+    margin: ITEM_SPACING,
+    borderRadius: 6,
     overflow: "hidden",
     backgroundColor: "#15151A",
   },
