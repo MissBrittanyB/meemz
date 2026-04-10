@@ -12,6 +12,7 @@ import {
   Alert,
   Dimensions,
   RefreshControl,
+  ScrollView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -202,25 +203,6 @@ export default function MemesScreen() {
     </TouchableOpacity>
   );
 
-  const renderCategoryChip = ({ item }: { item: Category | { name: string } }) => (
-    <TouchableOpacity
-      style={[
-        styles.categoryChip,
-        selectedCategory === item.name && styles.categoryChipActive,
-      ]}
-      onPress={() => setSelectedCategory(item.name)}
-    >
-      <Text
-        style={[
-          styles.categoryChipText,
-          selectedCategory === item.name && styles.categoryChipTextActive,
-        ]}
-      >
-        {"icon" in item ? item.icon : "📁"} {item.name}
-      </Text>
-    </TouchableOpacity>
-  );
-
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       {/* Header */}
@@ -252,15 +234,33 @@ export default function MemesScreen() {
       </View>
 
       {/* Category Chips */}
-      <FlatList
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        data={[{ name: "All" }, ...categories]}
-        renderItem={renderCategoryChip}
-        keyExtractor={(item) => item.name}
-        style={styles.categoriesList}
-        contentContainerStyle={styles.categoriesContent}
-      />
+      <View style={styles.categoriesWrapper}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.categoriesContent}
+        >
+          {[{ name: "All" } as Category, ...categories].map((item) => (
+            <TouchableOpacity
+              key={item.name}
+              style={[
+                styles.categoryChip,
+                selectedCategory === item.name && styles.categoryChipActive,
+              ]}
+              onPress={() => setSelectedCategory(item.name)}
+            >
+              <Text
+                style={[
+                  styles.categoryChipText,
+                  selectedCategory === item.name && styles.categoryChipTextActive,
+                ]}
+              >
+                {"icon" in item ? item.icon : "📁"} {item.name}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
 
       {/* Memes Grid */}
       {loading ? (
@@ -435,15 +435,14 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 16,
   },
-  categoriesList: {
-    maxHeight: 56,
+  categoriesWrapper: {
     marginTop: 12,
-    marginBottom: 4,
+    marginBottom: 8,
   },
   categoriesContent: {
     paddingHorizontal: 16,
-    paddingVertical: 4,
     gap: 8,
+    alignItems: "center",
   },
   categoryChip: {
     backgroundColor: "#1A1A1A",
