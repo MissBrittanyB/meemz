@@ -162,40 +162,45 @@ export default function MemesScreen() {
         link.click();
         document.body.removeChild(link);
         window.alert("Meme downloaded! Share it from your downloads folder.");
-      } else {
-        // Mobile (Expo Go): Save to temp file then share
-        const base64Data = meme.image_base64.replace(/^data:image\/\w+;base64,/, "");
-        const filename = `MemeVault_${Date.now()}.png`;
-        const fileUri = `${FileSystem.cacheDirectory}${filename}`;
+        return;
+      }
+      
+      // Mobile: First save to a temp file, then share
+      const base64Data = meme.image_base64.replace(/^data:image\/\w+;base64,/, "");
+      const filename = `MemeVault_${Date.now()}.png`;
+      const fileUri = FileSystem.documentDirectory + filename;
 
-        // Write the file
-        await FileSystem.writeAsStringAsync(fileUri, base64Data, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
+      console.log("Writing file to:", fileUri);
+      
+      await FileSystem.writeAsStringAsync(fileUri, base64Data, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
 
-        // Check if file was created
-        const fileInfo = await FileSystem.getInfoAsync(fileUri);
-        if (!fileInfo.exists) {
-          throw new Error("File was not created");
-        }
-
-        // Share the file
-        await Sharing.shareAsync(fileUri, {
-          mimeType: "image/png",
-          dialogTitle: "Share this meme",
-        });
+      console.log("File written, now sharing...");
+      
+      // Use Sharing
+      await Sharing.shareAsync(fileUri);
+      
+      // Clean up temp file after sharing
+      try {
+        await FileSystem.deleteAsync(fileUri, { idempotent: true });
+      } catch (e) {
+        // Ignore cleanup errors
       }
     } catch (error: any) {
-      console.error("Share error:", error);
+      console.error("Share error details:", error.message || error);
       
-      // Show helpful error message
-      if (Platform.OS === "web") {
-        window.alert("Couldn't share. Try the Save button instead.");
-      } else {
+      if (Platform.OS !== "web") {
         Alert.alert(
-          "Share Failed", 
-          "Try using Save to save to your photos, then share from there.",
-          [{ text: "OK" }]
+          "Share",
+          "Opening save dialog instead. Save the meme, then share from Photos.",
+          [
+            { 
+              text: "Save Now", 
+              onPress: () => saveToDevice(meme)
+            },
+            { text: "Cancel", style: "cancel" }
+          ]
         );
       }
     }
