@@ -51,7 +51,7 @@ export default function CategoriesScreen() {
 
   const getCategoryColor = (index: number) => {
     const colors = [
-      "#FF6B35",
+      "#FF7A1A",
       "#9B59B6",
       "#3498DB",
       "#27AE60",
@@ -107,12 +107,12 @@ export default function CategoriesScreen() {
 
       {loading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#FF6B35" />
+          <ActivityIndicator size="large" color="#FF7A1A" />
           <Text style={styles.loadingText}>Loading categories...</Text>
         </View>
       ) : categories.length === 0 ? (
         <View style={styles.emptyContainer}>
-          <Ionicons name="folder-open-outline" size={80} color="#333" />
+          <Ionicons name="folder-open-outline" size={80} color="#1E1E24" />
           <Text style={styles.emptyTitle}>No categories yet</Text>
           <Text style={styles.emptySubtitle}>
             Categories will appear when you add memes
@@ -129,7 +129,7 @@ export default function CategoriesScreen() {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={onRefresh}
-              tintColor="#FF6B35"
+              tintColor="#FF7A1A"
             />
           }
         />
@@ -141,7 +141,7 @@ export default function CategoriesScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0A0A0A",
+    backgroundColor: "#0B0B0F",
   },
   header: {
     paddingHorizontal: 16,
@@ -193,7 +193,7 @@ const styles = StyleSheet.create({
   categoryCard: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#1A1A1A",
+    backgroundColor: "#15151A",
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,

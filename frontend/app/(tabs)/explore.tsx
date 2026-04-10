@@ -14,7 +14,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
-import { shareMemeAction, saveToDeviceAction } from "../../utils/memeActions";
+import { shareMemeAction, saveToDeviceAction, copyMemeAction } from "../../utils/memeActions";
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || "";
 
@@ -119,6 +119,11 @@ export default function ExploreScreen() {
     await shareMemeAction(meme);
   };
 
+  const copyMeme = async (meme: Meme) => {
+    trackUsage(meme.id);
+    await copyMemeAction(meme);
+  };
+
   const saveToDevice = async (meme: Meme) => {
     trackUsage(meme.id);
     await saveToDeviceAction(meme);
@@ -131,7 +136,7 @@ export default function ExploreScreen() {
 
   const getCategoryColor = (category: string) => {
     const colorMap: Record<string, string> = {
-      Reactions: "#FF6B35",
+      Reactions: "#FF7A1A",
       Moods: "#9B59B6",
       Clapbacks: "#3498DB",
       Relatable: "#27AE60",
@@ -140,7 +145,7 @@ export default function ExploreScreen() {
       Unbothered: "#1ABC9C",
       Facts: "#E91E63",
     };
-    return colorMap[category] || "#FF6B35";
+    return colorMap[category] || "#FF7A1A";
   };
 
   const renderMemeCard = ({ item, index }: { item: Meme; index: number }) => {
@@ -176,7 +181,7 @@ export default function ExploreScreen() {
               <Ionicons
                 name={isFavorited ? "heart" : "heart-outline"}
                 size={20}
-                color={isFavorited ? "#FF6B35" : "#fff"}
+                color={isFavorited ? "#FF7A1A" : "#fff"}
               />
             </TouchableOpacity>
           </View>
@@ -212,12 +217,12 @@ export default function ExploreScreen() {
 
       {loading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#FF6B35" />
+          <ActivityIndicator size="large" color="#FF7A1A" />
           <Text style={styles.loadingText}>Discovering memes...</Text>
         </View>
       ) : memes.length === 0 ? (
         <View style={styles.emptyContainer}>
-          <Ionicons name="compass-outline" size={80} color="#333" />
+          <Ionicons name="compass-outline" size={80} color="#1E1E24" />
           <Text style={styles.emptyTitle}>Nothing to explore yet</Text>
           <Text style={styles.emptySubtitle}>
             Be the first to upload memes!
@@ -236,7 +241,7 @@ export default function ExploreScreen() {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={onRefresh}
-              tintColor="#FF6B35"
+              tintColor="#FF7A1A"
             />
           }
         />
@@ -303,9 +308,21 @@ export default function ExploreScreen() {
                     <Ionicons
                       name="share-social"
                       size={22}
-                      color="#FF6B35"
+                      color="#FF7A1A"
                     />
                     <Text style={styles.actionText}>Share</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.actionButton}
+                    onPress={() => copyMeme(selectedMeme)}
+                  >
+                    <Ionicons
+                      name="copy-outline"
+                      size={22}
+                      color="#FF7A1A"
+                    />
+                    <Text style={styles.actionText}>Copy</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
@@ -319,7 +336,7 @@ export default function ExploreScreen() {
                           : "heart-outline"
                       }
                       size={22}
-                      color="#FF6B35"
+                      color="#FF7A1A"
                     />
                     <Text style={styles.actionText}>
                       {favorites.includes(selectedMeme.id)
@@ -332,7 +349,7 @@ export default function ExploreScreen() {
                     style={styles.actionButton}
                     onPress={() => saveToDevice(selectedMeme)}
                   >
-                    <Ionicons name="download" size={22} color="#FF6B35" />
+                    <Ionicons name="download" size={22} color="#FF7A1A" />
                     <Text style={styles.actionText}>Save</Text>
                   </TouchableOpacity>
                 </View>
@@ -348,7 +365,7 @@ export default function ExploreScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0A0A0A",
+    backgroundColor: "#0B0B0F",
   },
   header: {
     flexDirection: "row",
@@ -374,7 +391,7 @@ const styles = StyleSheet.create({
   shuffleButton: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#FF6B35",
+    backgroundColor: "#FF7A1A",
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 20,
@@ -426,7 +443,7 @@ const styles = StyleSheet.create({
     aspectRatio: 0.87,
     borderRadius: 12,
     overflow: "hidden",
-    backgroundColor: "#1A1A1A",
+    backgroundColor: "#15151A",
   },
   memeImage: {
     width: "100%",
@@ -540,12 +557,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: 12,
     paddingHorizontal: 20,
-    backgroundColor: "#1A1A1A",
+    backgroundColor: "#15151A",
     borderRadius: 12,
     minWidth: 80,
   },
   actionText: {
-    color: "#FF6B35",
+    color: "#FF7A1A",
     fontSize: 12,
     fontWeight: "600",
     marginTop: 4,

@@ -43,6 +43,7 @@ export default function UploadScreen() {
   
   // Upload form
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [mediaType, setMediaType] = useState<string>("image");
   const [memeName, setMemeName] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("");
   const [tags, setTags] = useState("");
@@ -123,17 +124,35 @@ export default function UploadScreen() {
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
+      mediaTypes: ["images", "videos"],
+      allowsEditing: false,
       quality: 0.8,
       base64: true,
+      videoMaxDuration: 60,
     });
 
     if (!result.canceled && result.assets[0]) {
       const asset = result.assets[0];
+      const mimeType = asset.mimeType || "image/jpeg";
+      
+      // Detect media type
+      if (asset.type === "video" || mimeType.startsWith("video/")) {
+        setMediaType("video");
+      } else if (mimeType === "image/gif") {
+        setMediaType("gif");
+      } else {
+        setMediaType("image");
+      }
+
       if (asset.base64) {
-        const mimeType = asset.mimeType || "image/jpeg";
         setSelectedImage(`data:${mimeType};base64,${asset.base64}`);
+      } else if (asset.uri) {
+        // For videos, read file to base64
+        const FileSystem = require("expo-file-system/legacy");
+        const fileData = await FileSystem.readAsStringAsync(asset.uri, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        setSelectedImage(`data:${mimeType};base64,${fileData}`);
       }
     }
   };
@@ -141,9 +160,9 @@ export default function UploadScreen() {
   const uploadMeme = async () => {
     if (!selectedImage) {
       if (Platform.OS === "web") {
-        window.alert("Please select an image");
+        window.alert("Please select an image, GIF, or video");
       } else {
-        Alert.alert("Error", "Please select an image");
+        Alert.alert("Error", "Please select an image, GIF, or video");
       }
       return;
     }
@@ -178,6 +197,7 @@ export default function UploadScreen() {
           category: selectedCategory,
           tags: tagsArray,
           is_public: isPublic,
+          media_type: mediaType,
         },
         { headers }
       );
@@ -193,6 +213,7 @@ export default function UploadScreen() {
       setMemeName("");
       setTags("");
       setIsPublic(true);
+      setMediaType("image");
     } catch (error) {
       console.error("Error uploading meme:", error);
       if (Platform.OS === "web") {
@@ -211,7 +232,7 @@ export default function UploadScreen() {
       <SafeAreaView style={styles.container} edges={["top"]}>
         <View style={styles.loginContainer}>
           <View style={styles.lockIconContainer}>
-            <Ionicons name="cloud-upload" size={60} color="#FF6B35" />
+            <Ionicons name="cloud-upload" size={60} color="#FF7A1A" />
           </View>
           <Text style={styles.loginTitle}>Upload Memes</Text>
           <Text style={styles.loginSubtitle}>
@@ -327,7 +348,7 @@ export default function UploadScreen() {
             ) : (
               <View style={styles.placeholderContent}>
                 <Ionicons name="image-outline" size={60} color="#666" />
-                <Text style={styles.placeholderText}>Tap to select image</Text>
+                <Text style={styles.placeholderText}>Tap to select image, GIF, or video</Text>
               </View>
             )}
             {selectedImage && (
@@ -419,7 +440,7 @@ export default function UploadScreen() {
               <Switch
                 value={isPublic}
                 onValueChange={setIsPublic}
-                trackColor={{ false: "#333", true: "#27AE60" }}
+                trackColor={{ false: "#1E1E24", true: "#27AE60" }}
                 thumbColor="#fff"
               />
             </View>
@@ -452,7 +473,7 @@ export default function UploadScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0A0A0A",
+    backgroundColor: "#0B0B0F",
   },
   // Login styles
   loginContainer: {
@@ -486,7 +507,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#FF6B35",
+    backgroundColor: "#FF7A1A",
     width: "100%",
     paddingVertical: 16,
     borderRadius: 12,
@@ -506,7 +527,7 @@ const styles = StyleSheet.create({
   dividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: "#333",
+    backgroundColor: "#1E1E24",
   },
   dividerText: {
     color: "#666",
@@ -521,10 +542,10 @@ const styles = StyleSheet.create({
   passwordContainer: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#1A1A1A",
+    backgroundColor: "#15151A",
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#333",
+    borderColor: "#1E1E24",
     width: "100%",
     marginBottom: 16,
   },
@@ -547,7 +568,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#333",
+    backgroundColor: "#1E1E24",
     width: "100%",
     paddingVertical: 14,
     borderRadius: 12,
@@ -559,7 +580,7 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   buttonDisabled: {
-    backgroundColor: "#333",
+    backgroundColor: "#1E1E24",
     opacity: 0.6,
   },
   // Upload screen styles
@@ -597,10 +618,10 @@ const styles = StyleSheet.create({
   imagePicker: {
     marginHorizontal: 16,
     height: 250,
-    backgroundColor: "#1A1A1A",
+    backgroundColor: "#15151A",
     borderRadius: 16,
     borderWidth: 2,
-    borderColor: "#333",
+    borderColor: "#1E1E24",
     borderStyle: "dashed",
     overflow: "hidden",
     justifyContent: "center",
@@ -622,7 +643,7 @@ const styles = StyleSheet.create({
     position: "absolute",
     bottom: 12,
     right: 12,
-    backgroundColor: "#FF6B35",
+    backgroundColor: "#FF7A1A",
     width: 40,
     height: 40,
     borderRadius: 20,
@@ -640,14 +661,14 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   textInput: {
-    backgroundColor: "#1A1A1A",
+    backgroundColor: "#15151A",
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 14,
     color: "#fff",
     fontSize: 16,
     borderWidth: 1,
-    borderColor: "#333",
+    borderColor: "#1E1E24",
   },
   inputHint: {
     color: "#666",
@@ -660,17 +681,17 @@ const styles = StyleSheet.create({
   categoryChip: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#1A1A1A",
+    backgroundColor: "#15151A",
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 20,
     marginRight: 10,
     borderWidth: 1,
-    borderColor: "#333",
+    borderColor: "#1E1E24",
   },
   categoryChipSelected: {
-    backgroundColor: "#FF6B35",
-    borderColor: "#FF6B35",
+    backgroundColor: "#FF7A1A",
+    borderColor: "#FF7A1A",
   },
   categoryEmoji: {
     fontSize: 18,
@@ -688,13 +709,13 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: "#1A1A1A",
+    backgroundColor: "#15151A",
     marginHorizontal: 16,
     marginTop: 20,
     padding: 16,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#333",
+    borderColor: "#1E1E24",
   },
   toggleInfo: {
     flexDirection: "row",
@@ -718,7 +739,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#FF6B35",
+    backgroundColor: "#FF7A1A",
     marginHorizontal: 16,
     marginTop: 32,
     paddingVertical: 16,

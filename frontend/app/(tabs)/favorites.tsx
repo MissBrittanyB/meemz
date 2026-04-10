@@ -15,7 +15,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
-import { shareMemeAction, saveToDeviceAction } from "../../utils/memeActions";
+import { shareMemeAction, saveToDeviceAction, copyMemeAction } from "../../utils/memeActions";
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || "";
 const { width } = Dimensions.get("window");
@@ -112,6 +112,11 @@ export default function FavoritesScreen() {
     await shareMemeAction(meme);
   };
 
+  const copyMeme = async (meme: Meme) => {
+    trackUsage(meme.id);
+    await copyMemeAction(meme);
+  };
+
   const saveToDevice = async (meme: Meme) => {
     trackUsage(meme.id);
     await saveToDeviceAction(meme);
@@ -142,12 +147,12 @@ export default function FavoritesScreen() {
 
       {loading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#FF6B35" />
+          <ActivityIndicator size="large" color="#FF7A1A" />
           <Text style={styles.loadingText}>Loading favorites...</Text>
         </View>
       ) : favorites.length === 0 ? (
         <View style={styles.emptyContainer}>
-          <Ionicons name="heart-outline" size={80} color="#333" />
+          <Ionicons name="heart-outline" size={80} color="#1E1E24" />
           <Text style={styles.emptyTitle}>No favorites yet</Text>
           <Text style={styles.emptySubtitle}>
             Tap the heart on memes you love!
@@ -165,7 +170,7 @@ export default function FavoritesScreen() {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={onRefresh}
-              tintColor="#FF6B35"
+              tintColor="#FF7A1A"
             />
           }
         />
@@ -207,6 +212,14 @@ export default function FavoritesScreen() {
                   </TouchableOpacity>
 
                   <TouchableOpacity
+                    style={styles.actionButton}
+                    onPress={() => copyMeme(selectedMeme)}
+                  >
+                    <Ionicons name="copy-outline" size={24} color="#fff" />
+                    <Text style={styles.actionButtonText}>Copy</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
                     style={[styles.actionButton, styles.removeButton]}
                     onPress={() => removeFavorite(selectedMeme.id)}
                   >
@@ -236,7 +249,7 @@ export default function FavoritesScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0A0A0A",
+    backgroundColor: "#0B0B0F",
   },
   header: {
     paddingHorizontal: 16,
@@ -291,7 +304,7 @@ const styles = StyleSheet.create({
     margin: 4,
     borderRadius: 8,
     overflow: "hidden",
-    backgroundColor: "#1A1A1A",
+    backgroundColor: "#15151A",
   },
   memeImage: {
     width: "100%",
@@ -306,7 +319,7 @@ const styles = StyleSheet.create({
   modalContent: {
     width: "90%",
     maxHeight: "85%",
-    backgroundColor: "#1A1A1A",
+    backgroundColor: "#15151A",
     borderRadius: 16,
     padding: 16,
     alignItems: "center",
@@ -332,7 +345,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   modalCategory: {
-    color: "#FF6B35",
+    color: "#FF7A1A",
     fontSize: 14,
     marginTop: 4,
   },
@@ -343,7 +356,7 @@ const styles = StyleSheet.create({
     marginTop: 24,
     paddingTop: 16,
     borderTopWidth: 1,
-    borderTopColor: "#333",
+    borderTopColor: "#1E1E24",
   },
   actionButton: {
     alignItems: "center",

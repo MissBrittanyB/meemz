@@ -18,7 +18,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
-import { shareMemeAction, saveToDeviceAction } from "../../utils/memeActions";
+import { shareMemeAction, saveToDeviceAction, copyMemeAction } from "../../utils/memeActions";
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || "";
 const { width } = Dimensions.get("window");
@@ -161,6 +161,11 @@ export default function MemesScreen() {
     await shareMemeAction(meme);
   };
 
+  const copyMeme = async (meme: Meme) => {
+    trackUsage(meme.id);
+    await copyMemeAction(meme);
+  };
+
   const saveToDevice = async (meme: Meme) => {
     trackUsage(meme.id);
     await saveToDeviceAction(meme);
@@ -197,7 +202,7 @@ export default function MemesScreen() {
       />
       {favorites.includes(item.id) && (
         <View style={styles.favoriteIndicator}>
-          <Ionicons name="heart" size={14} color="#FF6B35" />
+          <Ionicons name="heart" size={14} color="#FF7A1A" />
         </View>
       )}
     </TouchableOpacity>
@@ -207,8 +212,8 @@ export default function MemesScreen() {
     <SafeAreaView style={styles.container} edges={["top"]}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.title}>MemeVault</Text>
-        <Text style={styles.subtitle}>Your meme library 🔥</Text>
+        <Text style={styles.title}>meemz</Text>
+        <Text style={styles.subtitle}>Where memes really live.</Text>
       </View>
 
       {/* Search Bar */}
@@ -265,12 +270,12 @@ export default function MemesScreen() {
       {/* Memes Grid */}
       {loading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#FF6B35" />
+          <ActivityIndicator size="large" color="#FF7A1A" />
           <Text style={styles.loadingText}>Loading memes...</Text>
         </View>
       ) : memes.length === 0 ? (
         <View style={styles.emptyContainer}>
-          <Ionicons name="images-outline" size={80} color="#333" />
+          <Ionicons name="images-outline" size={80} color="#1E1E24" />
           <Text style={styles.emptyTitle}>No memes yet</Text>
           <Text style={styles.emptySubtitle}>
             Upload some memes to get started!
@@ -288,7 +293,7 @@ export default function MemesScreen() {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={onRefresh}
-              tintColor="#FF6B35"
+              tintColor="#FF7A1A"
             />
           }
         />
@@ -343,6 +348,14 @@ export default function MemesScreen() {
                   </TouchableOpacity>
 
                   <TouchableOpacity
+                    style={styles.actionButton}
+                    onPress={() => copyMeme(selectedMeme)}
+                  >
+                    <Ionicons name="copy-outline" size={24} color="#fff" />
+                    <Text style={styles.actionButtonText}>Copy</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
                     style={[
                       styles.actionButton,
                       favorites.includes(selectedMeme.id) &&
@@ -358,14 +371,14 @@ export default function MemesScreen() {
                       }
                       size={24}
                       color={
-                        favorites.includes(selectedMeme.id) ? "#FF6B35" : "#fff"
+                        favorites.includes(selectedMeme.id) ? "#FF7A1A" : "#fff"
                       }
                     />
                     <Text
                       style={[
                         styles.actionButtonText,
                         favorites.includes(selectedMeme.id) && {
-                          color: "#FF6B35",
+                          color: "#FF7A1A",
                         },
                       ]}
                     >
@@ -401,7 +414,7 @@ export default function MemesScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0A0A0A",
+    backgroundColor: "#0B0B0F",
   },
   header: {
     paddingHorizontal: 16,
@@ -421,7 +434,7 @@ const styles = StyleSheet.create({
   searchContainer: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#1A1A1A",
+    backgroundColor: "#15151A",
     marginHorizontal: 16,
     borderRadius: 12,
     paddingHorizontal: 12,
@@ -445,14 +458,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   categoryChip: {
-    backgroundColor: "#1A1A1A",
+    backgroundColor: "#15151A",
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
     marginRight: 8,
   },
   categoryChipActive: {
-    backgroundColor: "#FF6B35",
+    backgroundColor: "#FF7A1A",
   },
   categoryChipText: {
     color: "#888",
@@ -500,7 +513,7 @@ const styles = StyleSheet.create({
     margin: 4,
     borderRadius: 8,
     overflow: "hidden",
-    backgroundColor: "#1A1A1A",
+    backgroundColor: "#15151A",
   },
   memeImage: {
     width: "100%",
@@ -523,7 +536,7 @@ const styles = StyleSheet.create({
   modalContent: {
     width: "90%",
     maxHeight: "85%",
-    backgroundColor: "#1A1A1A",
+    backgroundColor: "#15151A",
     borderRadius: 16,
     padding: 16,
     alignItems: "center",
@@ -549,7 +562,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   modalCategory: {
-    color: "#FF6B35",
+    color: "#FF7A1A",
     fontSize: 14,
     marginTop: 4,
   },
@@ -561,7 +574,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   tag: {
-    backgroundColor: "#333",
+    backgroundColor: "#1E1E24",
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
@@ -577,7 +590,7 @@ const styles = StyleSheet.create({
     marginTop: 24,
     paddingTop: 16,
     borderTopWidth: 1,
-    borderTopColor: "#333",
+    borderTopColor: "#1E1E24",
   },
   actionButton: {
     alignItems: "center",

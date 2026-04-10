@@ -23,7 +23,7 @@ client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ.get('DB_NAME', 'memevault')]
 
 # Create the main app
-app = FastAPI(title="MemeVault API")
+app = FastAPI(title="meemz API")
 
 # Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
@@ -124,6 +124,7 @@ class Meme(BaseModel):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     user_id: Optional[str] = None  # Creator's user ID
     is_public: bool = True  # Public or private
+    media_type: str = "image"  # "image", "gif", or "video"
 
 class MemeCreate(BaseModel):
     name: str
@@ -131,6 +132,7 @@ class MemeCreate(BaseModel):
     category: str
     tags: List[str] = []
     is_public: bool = True
+    media_type: str = "image"  # "image", "gif", or "video"
 
 class MemeResponse(BaseModel):
     id: str
@@ -143,6 +145,7 @@ class MemeResponse(BaseModel):
     user_id: Optional[str] = None
     is_public: bool = True
     username: Optional[str] = None  # Creator's username
+    media_type: str = "image"  # "image", "gif", or "video"
 
 class FavoriteAction(BaseModel):
     meme_id: str

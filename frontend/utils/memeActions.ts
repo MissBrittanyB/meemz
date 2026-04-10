@@ -2,6 +2,7 @@ import { Platform, Alert } from "react-native";
 import * as FileSystem from "expo-file-system/legacy";
 import * as MediaLibrary from "expo-media-library";
 import * as Sharing from "expo-sharing";
+import * as Clipboard from "expo-clipboard";
 
 interface MemeData {
   id: string;
@@ -38,7 +39,7 @@ function getImageExtension(imageData: string): string {
 async function writeToTempFile(meme: MemeData): Promise<string> {
   const base64Data = extractBase64(meme.image_base64);
   const ext = getImageExtension(meme.image_base64);
-  const filename = `MemeVault_${Date.now()}.${ext}`;
+  const filename = `meemz_${Date.now()}.${ext}`;
   const fileUri = `${FileSystem.cacheDirectory}${filename}`;
 
   await FileSystem.writeAsStringAsync(fileUri, base64Data, {
@@ -46,6 +47,42 @@ async function writeToTempFile(meme: MemeData): Promise<string> {
   });
 
   return fileUri;
+}
+
+/**
+ * Copies the meme image to the device clipboard.
+ * Users can then paste it into any app (social media replies, messages, etc.)
+ */
+export async function copyMemeAction(meme: MemeData): Promise<boolean> {
+  try {
+    const base64Data = extractBase64(meme.image_base64);
+
+    if (Platform.OS === "web") {
+      // Web fallback: copy as data URL to clipboard
+      try {
+        const blob = await fetch(meme.image_base64).then((r) => r.blob());
+        await navigator.clipboard.write([
+          new ClipboardItem({ [blob.type]: blob }),
+        ]);
+      } catch {
+        // Fallback: copy name as text
+        await Clipboard.setStringAsync(meme.name || "meemz Meme");
+      }
+      return true;
+    }
+
+    // Native: use expo-clipboard setImageAsync (expects raw base64 without prefix)
+    await Clipboard.setImageAsync(base64Data);
+
+    Alert.alert("Copied!", "Meme copied to clipboard. Paste it anywhere!");
+    return true;
+  } catch (error: any) {
+    console.error("Copy error:", error);
+    if (Platform.OS !== "web") {
+      Alert.alert("Copy Failed", "Could not copy meme to clipboard.");
+    }
+    return false;
+  }
 }
 
 /**
@@ -59,7 +96,7 @@ export async function shareMemeAction(meme: MemeData): Promise<boolean> {
       try {
         const link = document.createElement("a");
         link.href = meme.image_base64;
-        link.download = `MemeVault_${meme.id}.png`;
+        link.download = `meemz_${meme.id}.png`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -108,7 +145,7 @@ export async function saveToDeviceAction(meme: MemeData): Promise<boolean> {
       try {
         const link = document.createElement("a");
         link.href = meme.image_base64;
-        link.download = `MemeVault_${meme.id}.png`;
+        link.download = `meemz_${meme.id}.png`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);

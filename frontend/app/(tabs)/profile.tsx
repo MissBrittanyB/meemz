@@ -211,7 +211,7 @@ export default function ProfileScreen() {
     return (
       <SafeAreaView style={styles.container} edges={["top"]}>
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#FF6B35" />
+          <ActivityIndicator size="large" color="#FF7A1A" />
         </View>
       </SafeAreaView>
     );
@@ -227,9 +227,9 @@ export default function ProfileScreen() {
         >
           <ScrollView contentContainerStyle={styles.authContainer}>
             <View style={styles.authHeader}>
-              <Ionicons name="person-circle" size={80} color="#FF6B35" />
+              <Ionicons name="person-circle" size={80} color="#FF7A1A" />
               <Text style={styles.authTitle}>
-                {authMode === "login" ? "Welcome Back" : "Join MemeVault"}
+                {authMode === "login" ? "Welcome Back" : "Join meemz"}
               </Text>
               <Text style={styles.authSubtitle}>
                 {authMode === "login" 
@@ -379,7 +379,7 @@ export default function ProfileScreen() {
           
           {myMemes.length === 0 ? (
             <View style={styles.emptyMemes}>
-              <Ionicons name="images-outline" size={60} color="#333" />
+              <Ionicons name="images-outline" size={60} color="#1E1E24" />
               <Text style={styles.emptyText}>No memes uploaded yet</Text>
               <Text style={styles.emptySubtext}>Go to Upload to add your first meme!</Text>
             </View>
@@ -410,7 +410,7 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0A0A0A",
+    backgroundColor: "#0B0B0F",
   },
   loadingContainer: {
     flex: 1,
@@ -465,22 +465,22 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   textInput: {
-    backgroundColor: "#1A1A1A",
+    backgroundColor: "#15151A",
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 14,
     color: "#fff",
     fontSize: 16,
     borderWidth: 1,
-    borderColor: "#333",
+    borderColor: "#1E1E24",
   },
   passwordContainer: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#1A1A1A",
+    backgroundColor: "#15151A",
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#333",
+    borderColor: "#1E1E24",
   },
   passwordInput: {
     flex: 1,
@@ -493,7 +493,7 @@ const styles = StyleSheet.create({
     padding: 14,
   },
   authButton: {
-    backgroundColor: "#FF6B35",
+    backgroundColor: "#FF7A1A",
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: "center",
@@ -512,7 +512,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   switchAuthText: {
-    color: "#FF6B35",
+    color: "#FF7A1A",
     fontSize: 16,
   },
   // Profile styles
@@ -520,7 +520,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: 24,
     borderBottomWidth: 1,
-    borderBottomColor: "#1A1A1A",
+    borderBottomColor: "#15151A",
   },
   avatarContainer: {
     marginBottom: 16,
@@ -534,7 +534,7 @@ const styles = StyleSheet.create({
     width: 100,
     height: 100,
     borderRadius: 50,
-    backgroundColor: "#FF6B35",
+    backgroundColor: "#FF7A1A",
     justifyContent: "center",
     alignItems: "center",
   },
@@ -585,7 +585,7 @@ const styles = StyleSheet.create({
   shareButton: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#FF6B35",
+    backgroundColor: "#FF7A1A",
     paddingHorizontal: 20,
     paddingVertical: 12,
     borderRadius: 8,
@@ -636,7 +636,7 @@ const styles = StyleSheet.create({
     margin: 4,
     borderRadius: 8,
     overflow: "hidden",
-    backgroundColor: "#1A1A1A",
+    backgroundColor: "#15151A",
   },
   memeImage: {
     width: "100%",
