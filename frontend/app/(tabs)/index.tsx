@@ -212,28 +212,44 @@ export default function MemesScreen() {
   };
 
   const deleteMeme = async (meme: Meme) => {
-    Alert.alert(
-      "Delete Meme",
-      `Are you sure you want to delete "${meme.name}"?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await axios.delete(`${API_URL}/api/memes/${meme.id}`);
-              setMemes(memes.filter((m) => m.id !== meme.id));
-              setSelectedMeme(null);
-              Alert.alert("Deleted!", "Meme has been removed");
-            } catch (error) {
-              console.error("Error deleting:", error);
-              Alert.alert("Error", "Failed to delete meme");
-            }
+    // Use window.confirm for web, Alert.alert for native
+    if (Platform.OS === "web") {
+      const confirmed = window.confirm(`Are you sure you want to delete "${meme.name}"?`);
+      if (confirmed) {
+        try {
+          await axios.delete(`${API_URL}/api/memes/${meme.id}`);
+          setMemes(memes.filter((m) => m.id !== meme.id));
+          setSelectedMeme(null);
+          window.alert("Meme has been deleted!");
+        } catch (error) {
+          console.error("Error deleting:", error);
+          window.alert("Failed to delete meme");
+        }
+      }
+    } else {
+      Alert.alert(
+        "Delete Meme",
+        `Are you sure you want to delete "${meme.name}"?`,
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Delete",
+            style: "destructive",
+            onPress: async () => {
+              try {
+                await axios.delete(`${API_URL}/api/memes/${meme.id}`);
+                setMemes(memes.filter((m) => m.id !== meme.id));
+                setSelectedMeme(null);
+                Alert.alert("Deleted!", "Meme has been removed");
+              } catch (error) {
+                console.error("Error deleting:", error);
+                Alert.alert("Error", "Failed to delete meme");
+              }
+            },
           },
-        },
-      ]
-    );
+        ]
+      );
+    }
   };
 
   const renderMemeItem = ({ item }: { item: Meme }) => (
