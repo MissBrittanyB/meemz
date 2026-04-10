@@ -233,8 +233,8 @@ export default function ProfileScreen() {
               </Text>
               <Text style={styles.authSubtitle}>
                 {authMode === "login" 
-                  ? "Sign in to access your memes" 
-                  : "Create an account to upload & share memes"}
+                  ? "Sign in to access your meemz" 
+                  : "Create an account to upload & share meemzs"}
               </Text>
             </View>
 

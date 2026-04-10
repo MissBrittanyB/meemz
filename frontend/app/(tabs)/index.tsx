@@ -19,6 +19,8 @@ import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 import { shareMemeAction, saveToDeviceAction, copyMemeAction } from "../../utils/memeActions";
+import GradientText from "../../utils/GradientText";
+import { requireAuth } from "../../utils/authGate";
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || "";
 const { width } = Dimensions.get("window");
@@ -192,16 +194,22 @@ export default function MemesScreen() {
   };
 
   const shareMeme = async (meme: Meme) => {
+    const authed = await requireAuth();
+    if (!authed) return;
     trackUsage(meme.id);
     await shareMemeAction(meme);
   };
 
   const copyMeme = async (meme: Meme) => {
+    const authed = await requireAuth();
+    if (!authed) return;
     trackUsage(meme.id);
     await copyMemeAction(meme);
   };
 
   const saveToDevice = async (meme: Meme) => {
+    const authed = await requireAuth();
+    if (!authed) return;
     trackUsage(meme.id);
     await saveToDeviceAction(meme);
   };
@@ -212,7 +220,7 @@ export default function MemesScreen() {
       setMemes(memes.filter((m) => m.id !== meme.id));
       setSelectedMeme(null);
       if (Platform.OS === "web") {
-        console.log("Meme deleted successfully");
+        console.log("Meemz deleted successfully");
       } else {
         Alert.alert("Deleted!", "Meme has been removed");
       }
@@ -247,8 +255,8 @@ export default function MemesScreen() {
     <SafeAreaView style={styles.container} edges={["top"]}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.title}>meemz</Text>
-        <Text style={styles.subtitle}>Where memes really live.</Text>
+        <GradientText text="meemz" style={styles.title} />
+        <Text style={styles.subtitle}>Where meemz really live.</Text>
       </View>
 
       {/* Search Bar */}
@@ -261,7 +269,7 @@ export default function MemesScreen() {
         />
         <TextInput
           style={styles.searchInput}
-          placeholder="Search memes..."
+          placeholder="Search meemz..."
           placeholderTextColor="#666"
           value={searchQuery}
           onChangeText={setSearchQuery}
@@ -306,12 +314,12 @@ export default function MemesScreen() {
       {loading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#FF7A1A" />
-          <Text style={styles.loadingText}>Loading memes...</Text>
+          <Text style={styles.loadingText}>Loading meemz...</Text>
         </View>
       ) : memes.length === 0 ? (
         <View style={styles.emptyContainer}>
           <Ionicons name="images-outline" size={80} color="#1E1E24" />
-          <Text style={styles.emptyTitle}>No memes yet</Text>
+          <Text style={styles.emptyTitle}>No meemz yet</Text>
           <Text style={styles.emptySubtitle}>
             Upload some memes to get started!
           </Text>

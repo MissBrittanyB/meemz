@@ -203,9 +203,9 @@ export default function UploadScreen() {
       );
 
       if (Platform.OS === "web") {
-        window.alert("Meme uploaded successfully! 🎉");
+        window.alert("Meemz uploaded successfully! 🎉");
       } else {
-        Alert.alert("Success!", "Meme uploaded successfully! 🎉");
+        Alert.alert("Success!", "Meemz uploaded successfully! 🎉");
       }
       
       // Reset form
@@ -217,9 +217,9 @@ export default function UploadScreen() {
     } catch (error) {
       console.error("Error uploading meme:", error);
       if (Platform.OS === "web") {
-        window.alert("Failed to upload meme. Please try again.");
+        window.alert("Failed to upload meemz. Please try again.");
       } else {
-        Alert.alert("Error", "Failed to upload meme. Please try again.");
+        Alert.alert("Error", "Failed to upload meemz. Please try again.");
       }
     } finally {
       setUploading(false);
@@ -234,9 +234,9 @@ export default function UploadScreen() {
           <View style={styles.lockIconContainer}>
             <Ionicons name="cloud-upload" size={60} color="#FF7A1A" />
           </View>
-          <Text style={styles.loginTitle}>Upload Memes</Text>
+          <Text style={styles.loginTitle}>Upload Meemzs</Text>
           <Text style={styles.loginSubtitle}>
-            Sign in to upload memes to your profile, or use admin access for global uploads
+            Sign in to upload meemz to your profile, or use admin access for global uploads
           </Text>
 
           <TouchableOpacity
@@ -348,7 +348,7 @@ export default function UploadScreen() {
             ) : (
               <View style={styles.placeholderContent}>
                 <Ionicons name="image-outline" size={60} color="#666" />
-                <Text style={styles.placeholderText}>Tap to select image, GIF, or video</Text>
+                <Text style={styles.placeholderText}>Tap to select media, GIF, or video</Text>
               </View>
             )}
             {selectedImage && (
@@ -460,7 +460,7 @@ export default function UploadScreen() {
             ) : (
               <>
                 <Ionicons name="cloud-upload" size={24} color="#fff" />
-                <Text style={styles.uploadButtonText}>Upload Meme</Text>
+                <Text style={styles.uploadButtonText}>Upload Meemz</Text>
               </>
             )}
           </TouchableOpacity>

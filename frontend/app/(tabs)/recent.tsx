@@ -16,6 +16,7 @@ import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 import { shareMemeAction, saveToDeviceAction, copyMemeAction } from "../../utils/memeActions";
+import { requireAuth } from "../../utils/authGate";
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || "";
 const { width } = Dimensions.get("window");
@@ -122,16 +123,22 @@ export default function RecentScreen() {
   };
 
   const shareMeme = async (meme: Meme) => {
+    const authed = await requireAuth();
+    if (!authed) return;
     trackUsage(meme.id);
     await shareMemeAction(meme);
   };
 
   const copyMeme = async (meme: Meme) => {
+    const authed = await requireAuth();
+    if (!authed) return;
     trackUsage(meme.id);
     await copyMemeAction(meme);
   };
 
   const saveToDevice = async (meme: Meme) => {
+    const authed = await requireAuth();
+    if (!authed) return;
     trackUsage(meme.id);
     await saveToDeviceAction(meme);
   };
@@ -170,7 +177,7 @@ export default function RecentScreen() {
       ) : recentMemes.length === 0 ? (
         <View style={styles.emptyContainer}>
           <Ionicons name="time-outline" size={80} color="#1E1E24" />
-          <Text style={styles.emptyTitle}>No recent memes</Text>
+          <Text style={styles.emptyTitle}>No recent meemz</Text>
           <Text style={styles.emptySubtitle}>
             Share or save memes to see them here!
           </Text>

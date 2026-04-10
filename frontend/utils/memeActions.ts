@@ -74,12 +74,12 @@ export async function copyMemeAction(meme: MemeData): Promise<boolean> {
     // Native: use expo-clipboard setImageAsync (expects raw base64 without prefix)
     await Clipboard.setImageAsync(base64Data);
 
-    Alert.alert("Copied!", "Meme copied to clipboard. Paste it anywhere!");
+    Alert.alert("Copied!", "Meemz copied to clipboard. Paste it anywhere!");
     return true;
   } catch (error: any) {
     console.error("Copy error:", error);
     if (Platform.OS !== "web") {
-      Alert.alert("Copy Failed", "Could not copy meme to clipboard.");
+      Alert.alert("Copy Failed", "Could not copy meemz to clipboard.");
     }
     return false;
   }
@@ -113,7 +113,7 @@ export async function shareMemeAction(meme: MemeData): Promise<boolean> {
 
     await Sharing.shareAsync(fileUri, {
       mimeType,
-      dialogTitle: "Share Meme",
+      dialogTitle: "Share Meemz",
       UTI: ext === "jpg" ? "public.jpeg" : "public.png",
     });
 
@@ -174,12 +174,12 @@ export async function saveToDeviceAction(meme: MemeData): Promise<boolean> {
     // Cleanup temp file
     await FileSystem.deleteAsync(fileUri, { idempotent: true });
 
-    Alert.alert("Saved!", "Meme saved to your photos!");
+    Alert.alert("Saved!", "Meemz saved to your photos!");
     return true;
   } catch (error: any) {
     console.error("Save error:", error);
     if (Platform.OS !== "web") {
-      Alert.alert("Save Failed", "Could not save meme. Please try again.");
+      Alert.alert("Save Failed", "Could not save meemz. Please try again.");
     }
     return false;
   }

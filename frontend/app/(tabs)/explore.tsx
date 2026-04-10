@@ -15,6 +15,8 @@ import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 import { shareMemeAction, saveToDeviceAction, copyMemeAction } from "../../utils/memeActions";
+import { requireAuth } from "../../utils/authGate";
+import GradientText from "../../utils/GradientText";
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || "";
 
@@ -115,16 +117,22 @@ export default function ExploreScreen() {
   };
 
   const shareMeme = async (meme: Meme) => {
+    const authed = await requireAuth();
+    if (!authed) return;
     trackUsage(meme.id);
     await shareMemeAction(meme);
   };
 
   const copyMeme = async (meme: Meme) => {
+    const authed = await requireAuth();
+    if (!authed) return;
     trackUsage(meme.id);
     await copyMemeAction(meme);
   };
 
   const saveToDevice = async (meme: Meme) => {
+    const authed = await requireAuth();
+    if (!authed) return;
     trackUsage(meme.id);
     await saveToDeviceAction(meme);
   };
@@ -202,8 +210,8 @@ export default function ExploreScreen() {
     <SafeAreaView style={styles.container} edges={["top"]}>
       <View style={styles.header}>
         <View style={styles.headerLeft}>
-          <Text style={styles.title}>Explore</Text>
-          <Text style={styles.subtitle}>Discover new memes</Text>
+          <GradientText text="Explore" style={styles.title} />
+          <Text style={styles.subtitle}>Discover new meemz</Text>
         </View>
         <TouchableOpacity
           style={styles.shuffleButton}
@@ -218,14 +226,14 @@ export default function ExploreScreen() {
       {loading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#FF7A1A" />
-          <Text style={styles.loadingText}>Discovering memes...</Text>
+          <Text style={styles.loadingText}>Discovering meemz...</Text>
         </View>
       ) : memes.length === 0 ? (
         <View style={styles.emptyContainer}>
           <Ionicons name="compass-outline" size={80} color="#1E1E24" />
           <Text style={styles.emptyTitle}>Nothing to explore yet</Text>
           <Text style={styles.emptySubtitle}>
-            Be the first to upload memes!
+            Be the first to upload meemz!
           </Text>
         </View>
       ) : (

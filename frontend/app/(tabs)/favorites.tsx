@@ -16,6 +16,7 @@ import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 import { shareMemeAction, saveToDeviceAction, copyMemeAction } from "../../utils/memeActions";
+import { requireAuth } from "../../utils/authGate";
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || "";
 const { width } = Dimensions.get("window");
@@ -108,16 +109,22 @@ export default function FavoritesScreen() {
   };
 
   const shareMeme = async (meme: Meme) => {
+    const authed = await requireAuth();
+    if (!authed) return;
     trackUsage(meme.id);
     await shareMemeAction(meme);
   };
 
   const copyMeme = async (meme: Meme) => {
+    const authed = await requireAuth();
+    if (!authed) return;
     trackUsage(meme.id);
     await copyMemeAction(meme);
   };
 
   const saveToDevice = async (meme: Meme) => {
+    const authed = await requireAuth();
+    if (!authed) return;
     trackUsage(meme.id);
     await saveToDeviceAction(meme);
   };
