@@ -1,8 +1,21 @@
 import { Platform, Alert } from "react-native";
-import * as FileSystem from "expo-file-system/legacy";
 import * as MediaLibrary from "expo-media-library";
 import * as Sharing from "expo-sharing";
 import * as Clipboard from "expo-clipboard";
+
+// Lazy-load FileSystem legacy API to prevent bundling issues
+let FileSystem: any = null;
+async function getFileSystem() {
+  if (!FileSystem) {
+    try {
+      FileSystem = require("expo-file-system/legacy");
+    } catch (e) {
+      console.warn("expo-file-system/legacy not available, trying main import");
+      FileSystem = require("expo-file-system");
+    }
+  }
+  return FileSystem;
+}
 
 interface MemeData {
   id: string;
@@ -14,7 +27,11 @@ interface MemeData {
  * Extracts raw base64 data from a data URI or raw base64 string
  */
 function extractBase64(imageData: string): string {
-  return imageData.replace(/^data:image\/[a-zA-Z+]+;base64,/, "");
+  // Handle both data URI and raw base64
+  if (imageData.includes(",")) {
+    return imageData.split(",")[1] || imageData;
+  }
+  return imageData;
 }
 
 /**
@@ -32,20 +49,35 @@ function getImageExtension(imageData: string): string {
 }
 
 /**
+ * Gets the MIME type from a base64 data URI
+ */
+function getMimeType(imageData: string): string {
+  const match = imageData.match(/^data:([^;]+);base64,/);
+  if (match) return match[1];
+  return "image/png";
+}
+
+/**
  * Writes base64 image to a temp file and returns the file URI.
  */
 async function writeToTempFile(meme: MemeData): Promise<string> {
+  const FS = await getFileSystem();
+  
+  if (!FS || !FS.cacheDirectory) {
+    throw new Error("FileSystem not available on this platform");
+  }
+
   const base64Data = extractBase64(meme.image_base64);
   const ext = getImageExtension(meme.image_base64);
   const filename = `meemz_${Date.now()}.${ext}`;
-  const fileUri = `${FileSystem.cacheDirectory}${filename}`;
+  const fileUri = `${FS.cacheDirectory}${filename}`;
 
-  await FileSystem.writeAsStringAsync(fileUri, base64Data, {
-    encoding: FileSystem.EncodingType.Base64,
+  await FS.writeAsStringAsync(fileUri, base64Data, {
+    encoding: FS.EncodingType.Base64,
   });
 
   // Verify the file was written
-  const fileInfo = await FileSystem.getInfoAsync(fileUri);
+  const fileInfo = await FS.getInfoAsync(fileUri);
   if (!fileInfo.exists) {
     throw new Error("Failed to write temp file");
   }
@@ -164,9 +196,12 @@ export async function shareMemeAction(meme: MemeData): Promise<boolean> {
     // Cleanup temp file after a delay
     setTimeout(async () => {
       try {
-        await FileSystem.deleteAsync(fileUri, { idempotent: true });
+        const FS = await getFileSystem();
+        if (FS) {
+          await FS.deleteAsync(fileUri, { idempotent: true });
+        }
       } catch {
-        // Ignore
+        // Ignore cleanup errors
       }
     }, 30000);
 
@@ -212,7 +247,16 @@ export async function saveToDeviceAction(meme: MemeData): Promise<boolean> {
     // Write to temp file and save to library
     const fileUri = await writeToTempFile(meme);
     await MediaLibrary.createAssetAsync(fileUri);
-    await FileSystem.deleteAsync(fileUri, { idempotent: true });
+    
+    // Cleanup temp file
+    try {
+      const FS = await getFileSystem();
+      if (FS) {
+        await FS.deleteAsync(fileUri, { idempotent: true });
+      }
+    } catch {
+      // Ignore cleanup errors
+    }
 
     Alert.alert("Saved!", "Meemz saved to your photos!");
     return true;

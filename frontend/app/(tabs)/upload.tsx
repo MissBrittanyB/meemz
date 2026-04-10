@@ -19,6 +19,20 @@ import * as ImagePicker from "expo-image-picker";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 
+// Lazy-load FileSystem for video uploads
+let FileSystemLegacy: any = null;
+async function getFileSystem() {
+  if (!FileSystemLegacy) {
+    try {
+      FileSystemLegacy = require("expo-file-system/legacy");
+    } catch (e) {
+      console.warn("expo-file-system/legacy not available");
+      FileSystemLegacy = require("expo-file-system");
+    }
+  }
+  return FileSystemLegacy;
+}
+
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || "";
 
 // Admin password for non-logged-in admin uploads
@@ -148,11 +162,17 @@ export default function UploadScreen() {
         setSelectedImage(`data:${mimeType};base64,${asset.base64}`);
       } else if (asset.uri) {
         // For videos, read file to base64
-        const FileSystem = require("expo-file-system/legacy");
-        const fileData = await FileSystem.readAsStringAsync(asset.uri, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
-        setSelectedImage(`data:${mimeType};base64,${fileData}`);
+        try {
+          const FS = await getFileSystem();
+          const fileData = await FS.readAsStringAsync(asset.uri, {
+            encoding: FS.EncodingType.Base64,
+          });
+          setSelectedImage(`data:${mimeType};base64,${fileData}`);
+        } catch (e) {
+          console.error("Error reading file:", e);
+          // Fallback: use URI directly
+          setSelectedImage(asset.uri);
+        }
       }
     }
   };
