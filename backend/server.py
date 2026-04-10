@@ -459,6 +459,76 @@ async def get_memes(
     
     return result
 
+# ============ GIF to MP4 Conversion ============
+import subprocess
+import tempfile
+
+@api_router.get("/memes/{meme_id}/video")
+async def get_meme_as_video(meme_id: str):
+    """Convert a GIF meme to MP4 video for social media sharing"""
+    meme = await db.memes.find_one({"id": meme_id})
+    if not meme:
+        raise HTTPException(status_code=404, detail="Meme not found")
+
+    image_data = meme.get("image_base64", "")
+    if not image_data:
+        raise HTTPException(status_code=404, detail="No media data")
+
+    if "," in image_data:
+        raw_b64 = image_data.split(",", 1)[1]
+    else:
+        raw_b64 = image_data
+
+    try:
+        import base64 as b64_mod
+        gif_bytes = b64_mod.b64decode(raw_b64)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid base64 data")
+
+    with tempfile.NamedTemporaryFile(suffix=".gif", delete=False) as gif_file:
+        gif_file.write(gif_bytes)
+        gif_path = gif_file.name
+
+    mp4_path = gif_path.replace(".gif", ".mp4")
+
+    try:
+        result = subprocess.run([
+            "ffmpeg", "-y",
+            "-i", gif_path,
+            "-movflags", "faststart",
+            "-pix_fmt", "yuv420p",
+            "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+            "-c:v", "libx264",
+            "-preset", "fast",
+            "-crf", "23",
+            "-an",
+            mp4_path,
+        ], capture_output=True, text=True, timeout=30)
+
+        if result.returncode != 0:
+            logger.error(f"ffmpeg error: {result.stderr}")
+            raise HTTPException(status_code=500, detail="Video conversion failed")
+
+        with open(mp4_path, "rb") as f:
+            mp4_bytes = f.read()
+
+        mp4_b64 = b64_mod.b64encode(mp4_bytes).decode("utf-8")
+        mp4_data_uri = f"data:video/mp4;base64,{mp4_b64}"
+
+        logger.info(f"GIF to MP4: {len(gif_bytes)} bytes -> {len(mp4_bytes)} bytes for meme {meme_id}")
+
+        return {
+            "video_base64": mp4_data_uri,
+            "size": len(mp4_bytes),
+            "meme_id": meme_id,
+        }
+    finally:
+        for p in [gif_path, mp4_path]:
+            try:
+                os.unlink(p)
+            except OSError:
+                pass
+
 @api_router.get("/memes/explore")
 async def explore_memes(limit: int = 20):
     """Get random public memes for discovery"""

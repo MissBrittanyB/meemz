@@ -231,6 +231,54 @@ export async function shareMemeAction(meme: MemeData): Promise<boolean> {
       return false;
     }
 
+    // For GIFs: Convert to MP4 video for social media compatibility
+    if (isGif(meme)) {
+      console.log("[memeActions] GIF detected - converting to MP4 for social media");
+      try {
+        const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || "";
+        const response = await fetch(`${API_URL}/api/memes/${meme.id}/video`);
+        
+        if (response.ok) {
+          const videoData = await response.json();
+          if (videoData.video_base64) {
+            // Create a temporary meme object with the MP4 data
+            const mp4Meme: MemeData = {
+              ...meme,
+              image_base64: videoData.video_base64,
+              media_type: "video",
+            };
+            const fileUri = await writeToTempFile(mp4Meme);
+            console.log("[memeActions] Sharing MP4 video:", fileUri);
+
+            await Sharing.shareAsync(fileUri, {
+              mimeType: "video/mp4",
+              dialogTitle: "Share Meemz",
+              UTI: "public.mpeg-4",
+            });
+
+            setTimeout(() => cleanupFile(fileUri), 60000);
+
+            // Tip for social media
+            setTimeout(() => {
+              Alert.alert(
+                "Shared as Video!",
+                "Your GIF was converted to video for best social media compatibility. It will play animated on Instagram, Twitter, Facebook and more!",
+                [{ text: "Got it!" }]
+              );
+            }, 1000);
+
+            return true;
+          }
+        }
+      } catch (convertErr: any) {
+        console.log("[memeActions] MP4 conversion failed, falling back to GIF:", convertErr?.message);
+      }
+
+      // Fallback: share as GIF if conversion fails
+      console.log("[memeActions] Falling back to GIF share");
+    }
+
+    // Standard share (images + fallback for GIFs)
     const fileUri = await writeToTempFile(meme);
     const { mimeType, uti } = getMediaInfo(meme);
 
@@ -242,7 +290,6 @@ export async function shareMemeAction(meme: MemeData): Promise<boolean> {
       UTI: uti,
     });
 
-    // Delayed cleanup
     setTimeout(() => cleanupFile(fileUri), 60000);
 
     return true;
