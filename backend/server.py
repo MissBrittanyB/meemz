@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, UploadFile, File, Form, Depends
+from fastapi import FastAPI, APIRouter, HTTPException, UploadFile, File, Form, Depends, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -13,6 +13,12 @@ from datetime import datetime, timedelta
 import base64
 from passlib.context import CryptContext
 from jose import JWTError, jwt
+from emergentintegrations.payments.stripe.checkout import (
+    StripeCheckout,
+    CheckoutSessionResponse,
+    CheckoutStatusResponse,
+    CheckoutSessionRequest,
+)
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -855,6 +861,306 @@ async def subscribe(plan_id: str = "monthly", current_user: dict = Depends(get_r
         "current_period_end": period_end,
         "is_premium": True,
     }
+
+# ============ Stripe Checkout Endpoints ============
+
+# Plan prices map (server-side ONLY - never accept amounts from frontend)
+PLAN_PRICES = {
+    "weekly": 2.99,
+    "monthly": 11.99,
+    "yearly": 79.99,
+}
+
+@api_router.post("/subscriptions/create-checkout")
+async def create_checkout(
+    request: Request,
+    plan_id: str = "monthly",
+    origin_url: str = "",
+    current_user: dict = Depends(get_required_user),
+):
+    """Create a Stripe Checkout Session for a subscription plan"""
+    if plan_id not in PLAN_PRICES:
+        raise HTTPException(status_code=400, detail="Invalid plan")
+
+    stripe_api_key = os.environ.get("STRIPE_API_KEY")
+    if not stripe_api_key:
+        raise HTTPException(status_code=500, detail="Payment system not configured")
+
+    # Build URLs from the frontend origin (never hardcode)
+    if not origin_url:
+        origin_url = str(request.base_url).rstrip("/")
+
+    success_url = f"{origin_url}/api/subscriptions/payment-success?session_id={{CHECKOUT_SESSION_ID}}"
+    cancel_url = f"{origin_url}/api/subscriptions/payment-cancel"
+
+    # Webhook URL
+    host_url = str(request.base_url).rstrip("/")
+    webhook_url = f"{host_url}/api/webhook/stripe"
+
+    try:
+        stripe_checkout = StripeCheckout(api_key=stripe_api_key, webhook_url=webhook_url)
+
+        amount = float(PLAN_PRICES[plan_id])
+        checkout_request = CheckoutSessionRequest(
+            amount=amount,
+            currency="usd",
+            success_url=success_url,
+            cancel_url=cancel_url,
+            metadata={
+                "user_id": current_user["id"],
+                "plan_id": plan_id,
+                "username": current_user.get("username", ""),
+            },
+        )
+
+        session: CheckoutSessionResponse = await stripe_checkout.create_checkout_session(checkout_request)
+
+        # Create payment_transactions record BEFORE redirect
+        now = datetime.utcnow()
+        await db.payment_transactions.insert_one({
+            "session_id": session.session_id,
+            "user_id": current_user["id"],
+            "plan_id": plan_id,
+            "amount": amount,
+            "currency": "usd",
+            "payment_status": "initiated",
+            "metadata": {
+                "user_id": current_user["id"],
+                "plan_id": plan_id,
+                "username": current_user.get("username", ""),
+            },
+            "created_at": now,
+            "updated_at": now,
+        })
+
+        logger.info(f"Checkout session created: {session.session_id} for user {current_user['id']}, plan: {plan_id}")
+
+        return {
+            "url": session.url,
+            "session_id": session.session_id,
+        }
+
+    except Exception as e:
+        logger.error(f"Stripe checkout error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Payment error: {str(e)}")
+
+
+@api_router.get("/subscriptions/checkout-status/{session_id}")
+async def get_checkout_status(session_id: str, request: Request):
+    """Poll the status of a Stripe Checkout Session"""
+    stripe_api_key = os.environ.get("STRIPE_API_KEY")
+    if not stripe_api_key:
+        raise HTTPException(status_code=500, detail="Payment system not configured")
+
+    host_url = str(request.base_url).rstrip("/")
+    webhook_url = f"{host_url}/api/webhook/stripe"
+
+    try:
+        stripe_checkout = StripeCheckout(api_key=stripe_api_key, webhook_url=webhook_url)
+        status: CheckoutStatusResponse = await stripe_checkout.get_checkout_status(session_id)
+
+        # Update payment_transactions
+        txn = await db.payment_transactions.find_one({"session_id": session_id})
+        if txn:
+            new_status = status.payment_status
+            # Only process if not already completed
+            if txn.get("payment_status") != "paid":
+                update_data = {
+                    "payment_status": new_status,
+                    "status": status.status,
+                    "updated_at": datetime.utcnow(),
+                }
+                await db.payment_transactions.update_one(
+                    {"session_id": session_id},
+                    {"$set": update_data},
+                )
+
+                # If payment is successful, activate the subscription
+                if new_status == "paid":
+                    plan_id = txn.get("plan_id", "monthly")
+                    user_id = txn.get("user_id")
+                    now = datetime.utcnow()
+
+                    if plan_id == "weekly":
+                        period_end = now + timedelta(weeks=1)
+                    elif plan_id == "monthly":
+                        period_end = now + timedelta(days=30)
+                    else:
+                        period_end = now + timedelta(days=365)
+
+                    await db.subscriptions.update_one(
+                        {"user_id": user_id},
+                        {"$set": {
+                            "plan_id": plan_id,
+                            "status": "active",
+                            "current_period_start": now,
+                            "current_period_end": period_end,
+                            "stripe_session_id": session_id,
+                        }},
+                        upsert=True,
+                    )
+                    logger.info(f"Subscription activated for user {user_id}, plan: {plan_id}")
+
+        return {
+            "status": status.status,
+            "payment_status": status.payment_status,
+            "amount_total": status.amount_total,
+            "currency": status.currency,
+            "metadata": status.metadata,
+        }
+
+    except Exception as e:
+        logger.error(f"Checkout status error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Status check error: {str(e)}")
+
+
+from fastapi.responses import HTMLResponse
+
+@api_router.get("/subscriptions/payment-success")
+async def payment_success(session_id: str = ""):
+    """Success page after Stripe payment - shows confirmation and redirects"""
+    return HTMLResponse(content=f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Payment Successful - meemz</title>
+        <style>
+            body {{ background: #0B0B0F; color: white; font-family: -apple-system, sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }}
+            .container {{ text-align: center; padding: 32px; }}
+            .check {{ font-size: 64px; margin-bottom: 16px; }}
+            h1 {{ color: #FF7A1A; font-size: 28px; margin-bottom: 8px; }}
+            p {{ color: #888; font-size: 16px; margin-bottom: 24px; }}
+            .status {{ color: #4CAF50; font-size: 14px; margin-top: 16px; }}
+            .spinner {{ border: 3px solid #333; border-top: 3px solid #FF7A1A; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; margin: 16px auto; }}
+            @keyframes spin {{ to {{ transform: rotate(360deg); }} }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="check">✅</div>
+            <h1>Payment Successful!</h1>
+            <p>Your meemz premium subscription is now active.</p>
+            <div class="spinner" id="spinner"></div>
+            <p class="status" id="status">Verifying payment...</p>
+            <p style="color: #555; font-size: 12px; margin-top: 32px;">You can close this window and return to the app.</p>
+        </div>
+        <script>
+            async function pollStatus() {{
+                const sessionId = "{session_id}";
+                if (!sessionId) return;
+                
+                for (let i = 0; i < 5; i++) {{
+                    try {{
+                        const res = await fetch("/api/subscriptions/checkout-status/" + sessionId);
+                        const data = await res.json();
+                        if (data.payment_status === "paid") {{
+                            document.getElementById("status").textContent = "Payment confirmed! You're now premium.";
+                            document.getElementById("spinner").style.display = "none";
+                            return;
+                        }}
+                    }} catch(e) {{}}
+                    await new Promise(r => setTimeout(r, 2000));
+                }}
+                document.getElementById("status").textContent = "Payment processing. Check your app for status.";
+                document.getElementById("spinner").style.display = "none";
+            }}
+            pollStatus();
+        </script>
+    </body>
+    </html>
+    """)
+
+
+@api_router.get("/subscriptions/payment-cancel")
+async def payment_cancel():
+    """Cancel page - user cancelled the payment"""
+    return HTMLResponse(content="""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Payment Cancelled - meemz</title>
+        <style>
+            body { background: #0B0B0F; color: white; font-family: -apple-system, sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+            .container { text-align: center; padding: 32px; }
+            .icon { font-size: 64px; margin-bottom: 16px; }
+            h1 { color: #FF7A1A; font-size: 28px; margin-bottom: 8px; }
+            p { color: #888; font-size: 16px; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="icon">❌</div>
+            <h1>Payment Cancelled</h1>
+            <p>No worries! You can try again from the app.</p>
+            <p style="color: #555; font-size: 12px; margin-top: 32px;">Close this window and return to the app.</p>
+        </div>
+    </body>
+    </html>
+    """)
+
+
+@api_router.post("/webhook/stripe")
+async def stripe_webhook(request: Request):
+    """Handle Stripe webhook events"""
+    stripe_api_key = os.environ.get("STRIPE_API_KEY")
+    if not stripe_api_key:
+        raise HTTPException(status_code=500, detail="Payment system not configured")
+
+    host_url = str(request.base_url).rstrip("/")
+    webhook_url = f"{host_url}/api/webhook/stripe"
+
+    try:
+        body = await request.body()
+        stripe_checkout = StripeCheckout(api_key=stripe_api_key, webhook_url=webhook_url)
+        webhook_response = await stripe_checkout.handle_webhook(body, request.headers.get("Stripe-Signature"))
+
+        logger.info(f"Webhook: event={webhook_response.event_type}, session={webhook_response.session_id}, status={webhook_response.payment_status}")
+
+        # Update payment transaction
+        if webhook_response.session_id:
+            txn = await db.payment_transactions.find_one({"session_id": webhook_response.session_id})
+            if txn and txn.get("payment_status") != "paid":
+                await db.payment_transactions.update_one(
+                    {"session_id": webhook_response.session_id},
+                    {"$set": {
+                        "payment_status": webhook_response.payment_status,
+                        "event_type": webhook_response.event_type,
+                        "updated_at": datetime.utcnow(),
+                    }},
+                )
+
+                # Activate subscription on successful payment
+                if webhook_response.payment_status == "paid":
+                    plan_id = txn.get("plan_id", "monthly")
+                    user_id = txn.get("user_id")
+                    now = datetime.utcnow()
+
+                    if plan_id == "weekly":
+                        period_end = now + timedelta(weeks=1)
+                    elif plan_id == "monthly":
+                        period_end = now + timedelta(days=30)
+                    else:
+                        period_end = now + timedelta(days=365)
+
+                    await db.subscriptions.update_one(
+                        {"user_id": user_id},
+                        {"$set": {
+                            "plan_id": plan_id,
+                            "status": "active",
+                            "current_period_start": now,
+                            "current_period_end": period_end,
+                            "stripe_session_id": webhook_response.session_id,
+                        }},
+                        upsert=True,
+                    )
+
+        return {"status": "ok"}
+
+    except Exception as e:
+        logger.error(f"Webhook error: {str(e)}")
+        return {"status": "error", "message": str(e)}
 
 # Include the router in the main app
 app.include_router(api_router)

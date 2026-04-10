@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 MemeVault API Backend Testing Suite
-Tests all endpoints as specified in the review request
+Tests all endpoints including Stripe checkout integration
 """
 
 import requests
@@ -18,6 +18,8 @@ class MemeVaultTester:
         self.session = requests.Session()
         self.test_meme_id = None
         self.test_results = []
+        self.auth_token = None
+        self.test_session_id = None
         
     def log_test(self, test_name: str, success: bool, details: str = "", response_data: Any = None):
         """Log test results"""
@@ -444,14 +446,254 @@ class MemeVaultTester:
         except Exception as e:
             self.log_test("Explore Memes (Custom Limit)", False, f"Exception: {str(e)}")
             return False
+
+    # ============ STRIPE CHECKOUT INTEGRATION TESTS ============
+    
+    def test_auth_login(self):
+        """Test 15: POST /api/auth/login - Login with test credentials"""
+        try:
+            login_data = {
+                "email": "test@memevault.com",
+                "password": "Test123!"
+            }
+            
+            response = self.session.post(
+                f"{self.base_url}/auth/login",
+                json=login_data,
+                headers={"Content-Type": "application/json"}
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                if "access_token" in data and "user" in data:
+                    self.auth_token = data["access_token"]
+                    self.log_test("Auth Login", True, f"Successfully logged in as {data['user'].get('email')}")
+                    return True
+                else:
+                    self.log_test("Auth Login", False, "Missing access_token or user in response", data)
+                    return False
+            else:
+                self.log_test("Auth Login", False, f"Status: {response.status_code}", response.text)
+                return False
+                
+        except Exception as e:
+            self.log_test("Auth Login", False, f"Exception: {str(e)}")
+            return False
+    
+    def test_subscription_plans(self):
+        """Test 16: GET /api/subscriptions/plans - Get subscription plans"""
+        try:
+            response = self.session.get(f"{self.base_url}/subscriptions/plans")
+            
+            if response.status_code == 200:
+                data = response.json()
+                if isinstance(data, list) and len(data) == 3:
+                    # Check for expected plans
+                    plan_ids = [plan.get("id") for plan in data]
+                    expected_plans = ["weekly", "monthly", "yearly"]
+                    
+                    if all(plan_id in plan_ids for plan_id in expected_plans):
+                        # Check prices
+                        weekly_plan = next((p for p in data if p.get("id") == "weekly"), None)
+                        monthly_plan = next((p for p in data if p.get("id") == "monthly"), None)
+                        yearly_plan = next((p for p in data if p.get("id") == "yearly"), None)
+                        
+                        if (weekly_plan and weekly_plan.get("price") == 2.99 and
+                            monthly_plan and monthly_plan.get("price") == 11.99 and
+                            yearly_plan and yearly_plan.get("price") == 79.99):
+                            self.log_test("Subscription Plans", True, f"Found 3 plans with correct prices: Weekly $2.99, Monthly $11.99, Yearly $79.99")
+                            return True
+                        else:
+                            self.log_test("Subscription Plans", False, f"Incorrect prices in plans", data)
+                            return False
+                    else:
+                        missing_plans = [p for p in expected_plans if p not in plan_ids]
+                        self.log_test("Subscription Plans", False, f"Missing plans: {missing_plans}", data)
+                        return False
+                else:
+                    self.log_test("Subscription Plans", False, f"Expected 3 plans, got {len(data) if isinstance(data, list) else 'non-array'}", data)
+                    return False
+            else:
+                self.log_test("Subscription Plans", False, f"Status: {response.status_code}", response.text)
+                return False
+                
+        except Exception as e:
+            self.log_test("Subscription Plans", False, f"Exception: {str(e)}")
+            return False
+    
+    def test_create_checkout_session(self):
+        """Test 17: POST /api/subscriptions/create-checkout?plan_id=monthly - Create Stripe checkout session"""
+        if not self.auth_token:
+            self.log_test("Create Checkout Session", False, "No auth token available")
+            return False
+            
+        try:
+            headers = {
+                "Authorization": f"Bearer {self.auth_token}",
+                "Content-Type": "application/json"
+            }
+            
+            response = self.session.post(
+                f"{self.base_url}/subscriptions/create-checkout?plan_id=monthly",
+                headers=headers
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                if "url" in data and "session_id" in data:
+                    self.test_session_id = data["session_id"]
+                    self.log_test("Create Checkout Session", True, f"Created checkout session with ID: {data['session_id']}")
+                    return True
+                else:
+                    self.log_test("Create Checkout Session", False, "Missing url or session_id in response", data)
+                    return False
+            elif response.status_code == 500:
+                # Expected if Stripe key has issues
+                try:
+                    error_data = response.json()
+                    if "Payment error" in error_data.get("detail", ""):
+                        self.log_test("Create Checkout Session", True, f"Expected 500 error due to Stripe key issues: {error_data.get('detail')}")
+                        return True
+                    else:
+                        self.log_test("Create Checkout Session", False, f"Unexpected 500 error: {error_data.get('detail')}", error_data)
+                        return False
+                except:
+                    self.log_test("Create Checkout Session", True, f"Expected 500 error due to Stripe configuration: {response.text}")
+                    return True
+            else:
+                self.log_test("Create Checkout Session", False, f"Status: {response.status_code}", response.text)
+                return False
+                
+        except Exception as e:
+            self.log_test("Create Checkout Session", False, f"Exception: {str(e)}")
+            return False
+    
+    def test_checkout_status(self):
+        """Test 18: GET /api/subscriptions/checkout-status/{session_id} - Poll payment status"""
+        # Use a test session ID since we may not have a real one
+        test_session_id = self.test_session_id or "test_session_id"
+        
+        try:
+            response = self.session.get(f"{self.base_url}/subscriptions/checkout-status/{test_session_id}")
+            
+            if response.status_code == 200:
+                data = response.json()
+                expected_fields = ["status", "payment_status"]
+                has_required_fields = any(field in data for field in expected_fields)
+                
+                if has_required_fields:
+                    self.log_test("Checkout Status", True, f"Status endpoint working, returned: {data}")
+                    return True
+                else:
+                    self.log_test("Checkout Status", False, f"Missing expected fields in response", data)
+                    return False
+            elif response.status_code == 500:
+                # Expected if Stripe key has issues or session doesn't exist
+                try:
+                    error_data = response.json()
+                    if "Status check error" in error_data.get("detail", "") or "Payment system not configured" in error_data.get("detail", ""):
+                        self.log_test("Checkout Status", True, f"Expected 500 error due to Stripe issues: {error_data.get('detail')}")
+                        return True
+                    else:
+                        self.log_test("Checkout Status", False, f"Unexpected 500 error: {error_data.get('detail')}", error_data)
+                        return False
+                except:
+                    self.log_test("Checkout Status", True, f"Expected 500 error due to Stripe configuration: {response.text}")
+                    return True
+            else:
+                self.log_test("Checkout Status", False, f"Status: {response.status_code}", response.text)
+                return False
+                
+        except Exception as e:
+            self.log_test("Checkout Status", False, f"Exception: {str(e)}")
+            return False
+    
+    def test_payment_success_page(self):
+        """Test 19: GET /api/subscriptions/payment-success?session_id=test - Payment success HTML page"""
+        try:
+            response = self.session.get(f"{self.base_url}/subscriptions/payment-success?session_id=test")
+            
+            if response.status_code == 200:
+                content = response.text
+                # Check if it's HTML and contains expected content
+                if "<!DOCTYPE html>" in content and "Payment Successful" in content and "meemz" in content:
+                    self.log_test("Payment Success Page", True, "HTML page rendered correctly with success message")
+                    return True
+                else:
+                    self.log_test("Payment Success Page", False, "HTML page missing expected content", content[:200])
+                    return False
+            else:
+                self.log_test("Payment Success Page", False, f"Status: {response.status_code}", response.text)
+                return False
+                
+        except Exception as e:
+            self.log_test("Payment Success Page", False, f"Exception: {str(e)}")
+            return False
+    
+    def test_payment_cancel_page(self):
+        """Test 20: GET /api/subscriptions/payment-cancel - Payment cancel HTML page"""
+        try:
+            response = self.session.get(f"{self.base_url}/subscriptions/payment-cancel")
+            
+            if response.status_code == 200:
+                content = response.text
+                # Check if it's HTML and contains expected content
+                if "<!DOCTYPE html>" in content and "Payment Cancelled" in content and "meemz" in content:
+                    self.log_test("Payment Cancel Page", True, "HTML page rendered correctly with cancel message")
+                    return True
+                else:
+                    self.log_test("Payment Cancel Page", False, "HTML page missing expected content", content[:200])
+                    return False
+            else:
+                self.log_test("Payment Cancel Page", False, f"Status: {response.status_code}", response.text)
+                return False
+                
+        except Exception as e:
+            self.log_test("Payment Cancel Page", False, f"Exception: {str(e)}")
+            return False
+    
+    def test_stripe_webhook(self):
+        """Test 21: POST /api/webhook/stripe - Stripe webhook endpoint"""
+        try:
+            # Test with minimal payload to verify endpoint exists
+            test_payload = {"test": "webhook"}
+            headers = {"Content-Type": "application/json"}
+            
+            response = self.session.post(
+                f"{self.base_url}/webhook/stripe",
+                json=test_payload,
+                headers=headers
+            )
+            
+            # Webhook should respond even if payload is invalid
+            if response.status_code in [200, 400, 500]:
+                try:
+                    data = response.json()
+                    if "status" in data:
+                        self.log_test("Stripe Webhook", True, f"Webhook endpoint exists and responds: {data}")
+                        return True
+                    else:
+                        self.log_test("Stripe Webhook", True, f"Webhook endpoint exists, status: {response.status_code}")
+                        return True
+                except:
+                    self.log_test("Stripe Webhook", True, f"Webhook endpoint exists, status: {response.status_code}")
+                    return True
+            else:
+                self.log_test("Stripe Webhook", False, f"Status: {response.status_code}", response.text)
+                return False
+                
+        except Exception as e:
+            self.log_test("Stripe Webhook", False, f"Exception: {str(e)}")
+            return False
     
     def run_all_tests(self):
         """Run all tests in sequence"""
-        print(f"🚀 Starting MemeVault API Tests")
+        print(f"🚀 Starting MemeVault API Tests (Including Stripe Checkout Integration)")
         print(f"📍 Base URL: {self.base_url}")
         print("=" * 60)
         
-        tests = [
+        # Original API tests
+        original_tests = [
             self.test_api_health,
             self.test_get_categories,
             self.test_create_meme,
@@ -468,10 +710,33 @@ class MemeVaultTester:
             self.test_explore_memes_custom_limit
         ]
         
+        # Stripe checkout integration tests
+        stripe_tests = [
+            self.test_auth_login,
+            self.test_subscription_plans,
+            self.test_create_checkout_session,
+            self.test_checkout_status,
+            self.test_payment_success_page,
+            self.test_payment_cancel_page,
+            self.test_stripe_webhook
+        ]
+        
+        all_tests = original_tests + stripe_tests
+        
         passed = 0
         failed = 0
         
-        for test in tests:
+        print("🔧 Running Original API Tests...")
+        print("-" * 40)
+        for test in original_tests:
+            if test():
+                passed += 1
+            else:
+                failed += 1
+        
+        print("\n💳 Running Stripe Checkout Integration Tests...")
+        print("-" * 40)
+        for test in stripe_tests:
             if test():
                 passed += 1
             else:

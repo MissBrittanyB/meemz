@@ -15,6 +15,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 import { router } from "expo-router";
+import * as WebBrowser from "expo-web-browser";
 import GradientText from "../../utils/GradientText";
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || "";
@@ -128,27 +129,93 @@ export default function PricingScreen() {
 
     setProcessing(true);
     try {
+      // Get the origin URL for success/cancel redirects
+      let originUrl = API_URL;
+      if (Platform.OS === "web" && typeof window !== "undefined") {
+        originUrl = window.location.origin;
+      }
+
+      // Create Stripe Checkout Session
       const res = await axios.post(
-        `${API_URL}/api/subscriptions/subscribe?plan_id=${selectedPlan}`,
+        `${API_URL}/api/subscriptions/create-checkout?plan_id=${selectedPlan}&origin_url=${encodeURIComponent(originUrl)}`,
         {},
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      setSubStatus({
-        status: "active",
-        plan_id: selectedPlan,
-        trial_available: false,
-        is_premium: true,
-        current_period_end: res.data.current_period_end,
-      });
-      Alert.alert("Subscribed!", "Welcome to meemz premium!");
+
+      const checkoutUrl = res.data.url;
+      const sessionId = res.data.session_id;
+
+      if (!checkoutUrl) {
+        throw new Error("No checkout URL received");
+      }
+
+      // Open Stripe Checkout in browser
+      if (Platform.OS === "web") {
+        window.location.href = checkoutUrl;
+      } else {
+        const result = await WebBrowser.openBrowserAsync(checkoutUrl);
+
+        // When browser closes, poll for payment status
+        if (result.type === "cancel" || result.type === "dismiss") {
+          // Poll payment status
+          await pollPaymentStatus(sessionId);
+        }
+      }
     } catch (error: any) {
+      console.error("Subscribe error:", error);
       Alert.alert(
-        "Error",
-        error.response?.data?.detail || "Could not subscribe"
+        "Payment Error",
+        error.response?.data?.detail || error.message || "Could not start checkout"
       );
     } finally {
       setProcessing(false);
     }
+  };
+
+  const pollPaymentStatus = async (sessionId: string) => {
+    for (let i = 0; i < 5; i++) {
+      try {
+        const res = await axios.get(
+          `${API_URL}/api/subscriptions/checkout-status/${sessionId}`
+        );
+
+        if (res.data.payment_status === "paid") {
+          setSubStatus({
+            status: "active",
+            plan_id: selectedPlan,
+            trial_available: false,
+            is_premium: true,
+          });
+          Alert.alert(
+            "Payment Successful!",
+            "Welcome to meemz premium! Enjoy unlimited access."
+          );
+          return;
+        } else if (res.data.status === "expired") {
+          Alert.alert("Session Expired", "Payment session expired. Please try again.");
+          return;
+        }
+      } catch (e) {
+        console.error("Poll error:", e);
+      }
+      // Wait 2 seconds between polls
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+
+    // After 5 attempts, check one more time
+    Alert.alert(
+      "Processing",
+      "Your payment is being processed. Check back in a moment.",
+      [
+        {
+          text: "Check Now",
+          onPress: async () => {
+            await loadData();
+          },
+        },
+        { text: "OK" },
+      ]
+    );
   };
 
   const getPricePerWeek = (plan: Plan): string => {
