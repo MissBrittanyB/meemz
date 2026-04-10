@@ -13,11 +13,13 @@ import {
   Image,
   Dimensions,
   Linking,
+  Modal,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
+import { shareMemeAction, saveToDeviceAction, copyMemeAction } from "../../utils/memeActions";
 import * as ImagePicker from "expo-image-picker";
 import { router } from "expo-router";
 import GradientText from "../../utils/GradientText";
@@ -57,6 +59,8 @@ export default function ProfileScreen() {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [myMemes, setMyMemes] = useState<Meme[]>([]);
+  const [selectedMeme, setSelectedMeme] = useState<Meme | null>(null);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   // Auth form states
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
@@ -650,7 +654,12 @@ export default function ProfileScreen() {
           ) : (
             <View style={styles.memesGrid}>
               {myMemes.map((meme) => (
-                <View key={meme.id} style={styles.memeItem}>
+                <TouchableOpacity
+                  key={meme.id}
+                  style={styles.memeItem}
+                  onPress={() => setSelectedMeme(meme)}
+                  activeOpacity={0.7}
+                >
                   <Image
                     source={{ uri: meme.image_base64 }}
                     style={styles.memeImage}
@@ -661,11 +670,93 @@ export default function ProfileScreen() {
                       <Ionicons name="lock-closed" size={12} color="#fff" />
                     </View>
                   )}
-                </View>
+                </TouchableOpacity>
               ))}
             </View>
           )}
         </View>
+
+        {/* Meme Detail Modal */}
+        {selectedMeme && (
+          <Modal
+            visible={!!selectedMeme}
+            transparent
+            animationType="slide"
+            onRequestClose={() => setSelectedMeme(null)}
+          >
+            <View style={styles.modalOverlay}>
+              <View style={styles.modalContent}>
+                <TouchableOpacity
+                  style={styles.modalClose}
+                  onPress={() => setSelectedMeme(null)}
+                >
+                  <Ionicons name="close" size={28} color="#fff" />
+                </TouchableOpacity>
+
+                <ScrollView showsVerticalScrollIndicator={false}>
+                  <Image
+                    source={{ uri: selectedMeme.image_base64 }}
+                    style={styles.modalImage}
+                    resizeMode="contain"
+                  />
+                  <Text style={styles.modalTitle}>{selectedMeme.name}</Text>
+                  <Text style={styles.modalCategory}>{selectedMeme.category}</Text>
+
+                  {selectedMeme.tags && selectedMeme.tags.length > 0 && (
+                    <View style={styles.modalTags}>
+                      {selectedMeme.tags.map((tag, i) => (
+                        <View key={i} style={styles.modalTag}>
+                          <Text style={styles.modalTagText}>#{tag}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+
+                  <View style={styles.modalActions}>
+                    <TouchableOpacity
+                      style={[styles.modalActionBtn, actionLoading === "share" && { opacity: 0.6 }]}
+                      onPress={async () => {
+                        setActionLoading("share");
+                        try { await shareMemeAction(selectedMeme); } catch (e: any) { Alert.alert("Share Error", e?.message || "Failed"); }
+                        setActionLoading(null);
+                      }}
+                      disabled={actionLoading !== null}
+                    >
+                      {actionLoading === "share" ? <ActivityIndicator size="small" color="#FF7A1A" /> : <Ionicons name="share-outline" size={24} color="#fff" />}
+                      <Text style={styles.modalActionText}>{actionLoading === "share" ? "Sharing..." : "Share"}</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.modalActionBtn, actionLoading === "copy" && { opacity: 0.6 }]}
+                      onPress={async () => {
+                        setActionLoading("copy");
+                        try { await copyMemeAction(selectedMeme); } catch (e: any) { Alert.alert("Copy Error", e?.message || "Failed"); }
+                        setActionLoading(null);
+                      }}
+                      disabled={actionLoading !== null}
+                    >
+                      {actionLoading === "copy" ? <ActivityIndicator size="small" color="#FF7A1A" /> : <Ionicons name="copy-outline" size={24} color="#fff" />}
+                      <Text style={styles.modalActionText}>{actionLoading === "copy" ? "Copying..." : "Copy"}</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.modalActionBtn, actionLoading === "save" && { opacity: 0.6 }]}
+                      onPress={async () => {
+                        setActionLoading("save");
+                        try { await saveToDeviceAction(selectedMeme); } catch (e: any) { Alert.alert("Save Error", e?.message || "Failed"); }
+                        setActionLoading(null);
+                      }}
+                      disabled={actionLoading !== null}
+                    >
+                      {actionLoading === "save" ? <ActivityIndicator size="small" color="#FF7A1A" /> : <Ionicons name="download-outline" size={24} color="#fff" />}
+                      <Text style={styles.modalActionText}>{actionLoading === "save" ? "Saving..." : "Save"}</Text>
+                    </TouchableOpacity>
+                  </View>
+                </ScrollView>
+              </View>
+            </View>
+          </Modal>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -1048,5 +1139,82 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.6)",
     borderRadius: 10,
     padding: 4,
+  },
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.9)",
+    justifyContent: "flex-end",
+  },
+  modalContent: {
+    backgroundColor: "#12121A",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: "90%",
+    padding: 20,
+  },
+  modalClose: {
+    position: "absolute",
+    top: 16,
+    right: 16,
+    zIndex: 10,
+    backgroundColor: "rgba(255,255,255,0.1)",
+    borderRadius: 20,
+    padding: 6,
+  },
+  modalImage: {
+    width: "100%",
+    height: 300,
+    borderRadius: 12,
+    marginTop: 8,
+    marginBottom: 16,
+  },
+  modalTitle: {
+    color: "#EAEAF0",
+    fontSize: 20,
+    fontWeight: "700",
+    marginBottom: 4,
+  },
+  modalCategory: {
+    color: "#FF7A1A",
+    fontSize: 14,
+    fontWeight: "600",
+    marginBottom: 12,
+  },
+  modalTags: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    marginBottom: 16,
+  },
+  modalTag: {
+    backgroundColor: "rgba(255,122,26,0.15)",
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    marginRight: 6,
+    marginBottom: 6,
+  },
+  modalTagText: {
+    color: "#FF7A1A",
+    fontSize: 12,
+  },
+  modalActions: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    paddingVertical: 16,
+    borderTopWidth: 1,
+    borderTopColor: "#1E1E24",
+  },
+  modalActionBtn: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    minWidth: 80,
+  },
+  modalActionText: {
+    color: "#EAEAF0",
+    fontSize: 12,
+    marginTop: 4,
   },
 });
