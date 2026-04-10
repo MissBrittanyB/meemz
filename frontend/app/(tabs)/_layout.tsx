@@ -91,10 +91,11 @@ const styles = StyleSheet.create({
     paddingTop: 10,
   },
   tabBarLabel: {
-    fontSize: 11,
+    fontSize: 9,
     fontWeight: "600",
+    marginTop: -2,
   },
   tabBarIcon: {
-    marginBottom: -3,
+    marginBottom: -2,
   },
 });

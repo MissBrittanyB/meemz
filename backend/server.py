@@ -94,6 +94,8 @@ class UserResponse(BaseModel):
     username: str
     avatar: Optional[str] = None
     bio: Optional[str] = None
+    profile_image: Optional[str] = None
+    social_links: Optional[dict] = None  # {"instagram": "", "twitter": "", "tiktok": ""}
     created_at: datetime
     meme_count: int = 0
     followers_count: int = 0
@@ -103,6 +105,8 @@ class UserUpdate(BaseModel):
     username: Optional[str] = None
     bio: Optional[str] = None
     avatar: Optional[str] = None
+    profile_image: Optional[str] = None
+    social_links: Optional[dict] = None
 
 class Category(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -270,6 +274,12 @@ async def update_me(update_data: UserUpdate, current_user: dict = Depends(get_re
     
     if update_data.avatar is not None:
         update_dict["avatar"] = update_data.avatar
+
+    if update_data.profile_image is not None:
+        update_dict["profile_image"] = update_data.profile_image
+    
+    if update_data.social_links is not None:
+        update_dict["social_links"] = update_data.social_links
     
     if update_dict:
         await db.users.update_one({"id": current_user["id"]}, {"$set": update_dict})
@@ -293,6 +303,8 @@ async def get_user_profile(username: str):
         "display_name": user.get("display_name", user["username"]),
         "avatar": user.get("avatar"),
         "bio": user.get("bio"),
+        "profile_image": user.get("profile_image"),
+        "social_links": user.get("social_links"),
         "meme_count": meme_count,
         "created_at": user["created_at"],
     }

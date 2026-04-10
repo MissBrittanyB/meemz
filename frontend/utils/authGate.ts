@@ -9,7 +9,7 @@ import { router } from "expo-router";
  */
 export async function requireAuth(): Promise<boolean> {
   try {
-    const token = await AsyncStorage.getItem("auth_token");
+    const token = await AsyncStorage.getItem("memevault_token");
     if (token) return true;
 
     if (Platform.OS === "web") {
