@@ -436,11 +436,13 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   categoriesList: {
-    maxHeight: 50,
-    marginTop: 16,
+    maxHeight: 56,
+    marginTop: 12,
+    marginBottom: 4,
   },
   categoriesContent: {
     paddingHorizontal: 16,
+    paddingVertical: 4,
     gap: 8,
   },
   categoryChip: {
