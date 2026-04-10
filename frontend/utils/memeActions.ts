@@ -14,7 +14,6 @@ interface MemeData {
  * Extracts raw base64 data from a data URI or raw base64 string
  */
 function extractBase64(imageData: string): string {
-  // Strip data URI prefix if present (e.g., "data:image/png;base64,")
   return imageData.replace(/^data:image\/[a-zA-Z+]+;base64,/, "");
 }
 
@@ -34,7 +33,6 @@ function getImageExtension(imageData: string): string {
 
 /**
  * Writes base64 image to a temp file and returns the file URI.
- * Uses cacheDirectory for temp files (best for sharing).
  */
 async function writeToTempFile(meme: MemeData): Promise<string> {
   const base64Data = extractBase64(meme.image_base64);
@@ -46,36 +44,74 @@ async function writeToTempFile(meme: MemeData): Promise<string> {
     encoding: FileSystem.EncodingType.Base64,
   });
 
+  // Verify the file was written
+  const fileInfo = await FileSystem.getInfoAsync(fileUri);
+  if (!fileInfo.exists) {
+    throw new Error("Failed to write temp file");
+  }
+
   return fileUri;
 }
 
 /**
  * Copies the meme image to the device clipboard.
- * Users can then paste it into any app (social media replies, messages, etc.)
  */
 export async function copyMemeAction(meme: MemeData): Promise<boolean> {
   try {
-    const base64Data = extractBase64(meme.image_base64);
-
     if (Platform.OS === "web") {
-      // Web fallback: copy as data URL to clipboard
       try {
         const blob = await fetch(meme.image_base64).then((r) => r.blob());
         await navigator.clipboard.write([
           new ClipboardItem({ [blob.type]: blob }),
         ]);
       } catch {
-        // Fallback: copy name as text
-        await Clipboard.setStringAsync(meme.name || "meemz Meme");
+        await Clipboard.setStringAsync(meme.name || "meemz");
       }
       return true;
     }
 
-    // Native: use expo-clipboard setImageAsync (expects raw base64 without prefix)
-    await Clipboard.setImageAsync(base64Data);
-
-    Alert.alert("Copied!", "Meemz copied to clipboard. Paste it anywhere!");
-    return true;
+    // Try native image copy
+    const base64Data = extractBase64(meme.image_base64);
+    try {
+      await Clipboard.setImageAsync(base64Data);
+      Alert.alert("Copied!", "Meemz copied to clipboard! Paste it anywhere.");
+      return true;
+    } catch (clipboardError) {
+      console.log("Image clipboard failed, trying file-based approach:", clipboardError);
+      // Fallback: save to temp file and let user know
+      try {
+        const fileUri = await writeToTempFile(meme);
+        // Try sharing as a fallback for copy
+        const isAvailable = await Sharing.isAvailableAsync();
+        if (isAvailable) {
+          Alert.alert(
+            "Copy Meemz",
+            "Tap 'Copy Photo' in the share sheet to copy this meemz!",
+            [
+              { text: "Cancel", style: "cancel" },
+              {
+                text: "Open Share",
+                onPress: async () => {
+                  try {
+                    await Sharing.shareAsync(fileUri, {
+                      mimeType: "image/png",
+                      dialogTitle: "Copy Meemz",
+                    });
+                  } catch (e) {
+                    console.error("Share fallback error:", e);
+                  }
+                },
+              },
+            ]
+          );
+          return true;
+        }
+      } catch (fallbackError) {
+        console.error("Copy fallback error:", fallbackError);
+      }
+      Alert.alert("Copy Failed", "Could not copy meemz. Try using Share instead.");
+      return false;
+    }
   } catch (error: any) {
     console.error("Copy error:", error);
     if (Platform.OS !== "web") {
@@ -87,12 +123,10 @@ export async function copyMemeAction(meme: MemeData): Promise<boolean> {
 
 /**
  * Opens the native share sheet to share a meme image.
- * On web, falls back to a download link.
  */
 export async function shareMemeAction(meme: MemeData): Promise<boolean> {
   try {
     if (Platform.OS === "web") {
-      // Web fallback: trigger download
       try {
         const link = document.createElement("a");
         link.href = meme.image_base64;
@@ -101,12 +135,22 @@ export async function shareMemeAction(meme: MemeData): Promise<boolean> {
         link.click();
         document.body.removeChild(link);
       } catch {
-        // Silently fail on web
+        // Silently fail
       }
       return true;
     }
 
-    // Native: write to temp file, then open share sheet
+    // Check if sharing is available
+    const isAvailable = await Sharing.isAvailableAsync();
+    if (!isAvailable) {
+      Alert.alert(
+        "Sharing Unavailable",
+        "Sharing is not available on this device. Try saving the meemz first."
+      );
+      return false;
+    }
+
+    // Write to temp file, then share
     const fileUri = await writeToTempFile(meme);
     const ext = getImageExtension(meme.image_base64);
     const mimeType = ext === "jpg" ? "image/jpeg" : `image/${ext}`;
@@ -117,12 +161,12 @@ export async function shareMemeAction(meme: MemeData): Promise<boolean> {
       UTI: ext === "jpg" ? "public.jpeg" : "public.png",
     });
 
-    // Cleanup temp file after a delay (give share sheet time)
+    // Cleanup temp file after a delay
     setTimeout(async () => {
       try {
         await FileSystem.deleteAsync(fileUri, { idempotent: true });
       } catch {
-        // Ignore cleanup errors
+        // Ignore
       }
     }, 30000);
 
@@ -150,7 +194,7 @@ export async function saveToDeviceAction(meme: MemeData): Promise<boolean> {
         link.click();
         document.body.removeChild(link);
       } catch {
-        // Silently fail on web
+        // Silently fail
       }
       return true;
     }
@@ -165,13 +209,9 @@ export async function saveToDeviceAction(meme: MemeData): Promise<boolean> {
       return false;
     }
 
-    // Write to temp file
+    // Write to temp file and save to library
     const fileUri = await writeToTempFile(meme);
-
-    // Save to media library
     await MediaLibrary.createAssetAsync(fileUri);
-
-    // Cleanup temp file
     await FileSystem.deleteAsync(fileUri, { idempotent: true });
 
     Alert.alert("Saved!", "Meemz saved to your photos!");

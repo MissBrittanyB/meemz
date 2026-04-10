@@ -148,11 +148,12 @@ export default function MemesScreen() {
     }
   }, [deviceId]);
 
+  // Re-fetch when search/category filters change
   useEffect(() => {
     if (deviceId) {
-      fetchMemes();
+      fetchMemes(true);
     }
-  }, [fetchMemes, deviceId]);
+  }, [searchQuery, selectedCategory]);
 
   const onRefresh = async () => {
     setRefreshing(true);

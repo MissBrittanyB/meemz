@@ -19,7 +19,9 @@ import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 import * as ImagePicker from "expo-image-picker";
+import { router } from "expo-router";
 import GradientText from "../../utils/GradientText";
+import { LinearGradient } from "expo-linear-gradient";
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || "";
 const { width } = Dimensions.get("window");
@@ -512,6 +514,23 @@ export default function ProfileScreen() {
             </View>
           </View>
 
+          {/* Go Premium CTA */}
+          <TouchableOpacity
+            style={styles.premiumCTA}
+            onPress={() => router.push("/(tabs)/pricing")}
+            activeOpacity={0.8}
+          >
+            <LinearGradient
+              colors={["#FF7A1A", "#FF5A8A", "#8B5CFF", "#4FA8FF"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.premiumGradientBtn}
+            >
+              <Ionicons name="diamond" size={18} color="#fff" />
+              <Text style={styles.premiumCTAText}>Go Premium</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+
           {/* Action Buttons */}
           {!isEditing ? (
             <View style={styles.actionRow}>
@@ -866,8 +885,26 @@ const styles = StyleSheet.create({
   },
   actionRow: {
     flexDirection: "row",
-    marginTop: 20,
+    marginTop: 16,
     gap: 12,
+  },
+  premiumCTA: {
+    marginTop: 20,
+    borderRadius: 12,
+    overflow: "hidden",
+    width: "100%",
+  },
+  premiumGradientBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 14,
+    gap: 8,
+  },
+  premiumCTAText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "bold",
   },
   editButton: {
     flexDirection: "row",

@@ -118,6 +118,73 @@ class CategoryCreate(BaseModel):
     name: str
     icon: str = "😎"
 
+# ============ Subscription Models ============
+class SubscriptionPlan(BaseModel):
+    id: str
+    name: str
+    price: float
+    interval: str  # "week", "month", "year"
+    description: str
+    features: List[str] = []
+
+class UserSubscription(BaseModel):
+    user_id: str
+    plan_id: str
+    status: str = "trial"  # "trial", "active", "cancelled", "expired"
+    trial_start: Optional[datetime] = None
+    trial_end: Optional[datetime] = None
+    current_period_start: Optional[datetime] = None
+    current_period_end: Optional[datetime] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+SUBSCRIPTION_PLANS = [
+    {
+        "id": "weekly",
+        "name": "Weekly",
+        "price": 2.99,
+        "interval": "week",
+        "description": "Billed weekly",
+        "features": [
+            "Unlimited meemz access",
+            "Share, copy & save",
+            "Upload meemz",
+            "Ad-free experience",
+        ],
+    },
+    {
+        "id": "monthly",
+        "name": "Monthly",
+        "price": 11.99,
+        "interval": "month",
+        "description": "Billed monthly — Save 8%",
+        "features": [
+            "Unlimited meemz access",
+            "Share, copy & save",
+            "Upload meemz",
+            "Ad-free experience",
+            "Early access to trending",
+        ],
+        "popular": True,
+    },
+    {
+        "id": "yearly",
+        "name": "Yearly",
+        "price": 79.99,
+        "interval": "year",
+        "description": "Billed annually — Save 49%",
+        "features": [
+            "Unlimited meemz access",
+            "Share, copy & save",
+            "Upload meemz",
+            "Ad-free experience",
+            "Early access to trending",
+            "Exclusive meemz collections",
+        ],
+    },
+]
+
+
+
 class Meme(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     name: str
@@ -698,6 +765,97 @@ async def seed_categories():
 async def root():
     return {"message": "MemeVault API is running!"}
 
+# ============ Subscription Endpoints ============
+@api_router.get("/subscriptions/plans")
+async def get_subscription_plans():
+    """Get available subscription plans"""
+    return SUBSCRIPTION_PLANS
+
+@api_router.get("/subscriptions/status")
+async def get_subscription_status(current_user: dict = Depends(get_required_user)):
+    """Get current user's subscription status"""
+    sub = await db.subscriptions.find_one({"user_id": current_user["id"]})
+    if not sub:
+        return {
+            "status": "none",
+            "plan_id": None,
+            "trial_available": True,
+            "is_premium": False,
+        }
+    
+    now = datetime.utcnow()
+    is_trial = sub.get("status") == "trial" and sub.get("trial_end") and sub["trial_end"] > now
+    is_active = sub.get("status") == "active" and sub.get("current_period_end") and sub["current_period_end"] > now
+    
+    return {
+        "status": sub.get("status", "none"),
+        "plan_id": sub.get("plan_id"),
+        "trial_available": False,
+        "is_premium": is_trial or is_active,
+        "trial_end": sub.get("trial_end"),
+        "current_period_end": sub.get("current_period_end"),
+    }
+
+@api_router.post("/subscriptions/start-trial")
+async def start_trial(current_user: dict = Depends(get_required_user)):
+    """Start a 7-day free trial"""
+    existing = await db.subscriptions.find_one({"user_id": current_user["id"]})
+    if existing:
+        raise HTTPException(status_code=400, detail="Trial already used")
+    
+    now = datetime.utcnow()
+    trial_end = now + timedelta(days=7)
+    
+    sub = {
+        "user_id": current_user["id"],
+        "plan_id": "trial",
+        "status": "trial",
+        "trial_start": now,
+        "trial_end": trial_end,
+        "created_at": now,
+    }
+    await db.subscriptions.insert_one(sub)
+    
+    return {
+        "status": "trial",
+        "trial_end": trial_end,
+        "is_premium": True,
+        "message": "7-day free trial started!",
+    }
+
+@api_router.post("/subscriptions/subscribe")
+async def subscribe(plan_id: str = "monthly", current_user: dict = Depends(get_required_user)):
+    """Subscribe to a plan (placeholder for payment integration)"""
+    valid_plans = ["weekly", "monthly", "yearly"]
+    if plan_id not in valid_plans:
+        raise HTTPException(status_code=400, detail="Invalid plan")
+    
+    now = datetime.utcnow()
+    if plan_id == "weekly":
+        period_end = now + timedelta(weeks=1)
+    elif plan_id == "monthly":
+        period_end = now + timedelta(days=30)
+    else:
+        period_end = now + timedelta(days=365)
+    
+    await db.subscriptions.update_one(
+        {"user_id": current_user["id"]},
+        {"$set": {
+            "plan_id": plan_id,
+            "status": "active",
+            "current_period_start": now,
+            "current_period_end": period_end,
+        }},
+        upsert=True,
+    )
+    
+    return {
+        "status": "active",
+        "plan_id": plan_id,
+        "current_period_end": period_end,
+        "is_premium": True,
+    }
+
 # Include the router in the main app
 app.include_router(api_router)
 
@@ -730,7 +888,6 @@ async def startup_event():
             cat_obj = Category(**cat)
             await db.categories.insert_one(cat_obj.dict())
     logger.info("Categories seeded!")
-
 @app.on_event("shutdown")
 async def shutdown_db_client():
     client.close()

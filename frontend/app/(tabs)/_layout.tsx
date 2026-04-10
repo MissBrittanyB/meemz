@@ -60,6 +60,16 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="pricing"
+        options={{
+          title: "Premium",
+          href: null,
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="diamond" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="upload"
         options={{
           title: "Upload",
