@@ -43,11 +43,24 @@ export default function ExploreScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const [favorites, setFavorites] = useState<string[]>([]);
   const [deviceId, setDeviceId] = useState("");
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     initDevice();
     fetchExploreMemes();
+    checkAdmin();
   }, []);
+
+  const checkAdmin = async () => {
+    try {
+      const token = await AsyncStorage.getItem("memevault_token");
+      if (!token) return;
+      const res = await axios.get(`${API_URL}/api/auth/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setIsAdmin(res.data?.is_admin === true);
+    } catch { /* not logged in */ }
+  };
 
   const initDevice = async () => {
     try {
@@ -88,6 +101,33 @@ export default function ExploreScreen() {
   const shuffleMemes = async () => {
     setLoading(true);
     await fetchExploreMemes();
+  };
+
+  const deleteMeme = async (meme: Meme) => {
+    const doDelete = async () => {
+      try {
+        const token = await AsyncStorage.getItem("memevault_token");
+        await axios.delete(`${API_URL}/api/memes/${meme.id}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        setMemes((prev) => prev.filter((m) => m.id !== meme.id));
+        setSelectedMeme(null);
+        setModalVisible(false);
+        Alert.alert("Deleted!", "Meme has been removed");
+      } catch (error: any) {
+        const msg = error?.response?.data?.detail || "Failed to delete meme";
+        Alert.alert("Error", msg);
+      }
+    };
+
+    Alert.alert(
+      "Delete Meme",
+      "Are you sure you want to delete this meme? This cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Delete", style: "destructive", onPress: doDelete },
+      ]
+    );
   };
 
   const toggleFavorite = async (meme: Meme) => {
@@ -374,6 +414,16 @@ export default function ExploreScreen() {
                     <Ionicons name="download" size={22} color="#FF7A1A" />
                     <Text style={styles.actionText}>Save</Text>
                   </TouchableOpacity>
+
+                  {isAdmin && (
+                    <TouchableOpacity
+                      style={[styles.actionButton, { borderColor: "#E74C3C" }]}
+                      onPress={() => deleteMeme(selectedMeme)}
+                    >
+                      <Ionicons name="trash-outline" size={22} color="#E74C3C" />
+                      <Text style={[styles.actionText, { color: "#E74C3C" }]}>Delete</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
               </>
             )}

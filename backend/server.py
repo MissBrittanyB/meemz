@@ -106,6 +106,7 @@ class UserResponse(BaseModel):
     meme_count: int = 0
     followers_count: int = 0
     following_count: int = 0
+    is_admin: bool = False
 
 class UserUpdate(BaseModel):
     username: Optional[str] = None
@@ -277,6 +278,7 @@ async def register(user_data: UserRegister):
             "display_name": user["display_name"],
             "avatar": user["avatar"],
             "bio": user["bio"],
+            "is_admin": user.get("is_admin", False),
         }
     }
 
@@ -307,6 +309,7 @@ async def login(user_data: UserLogin):
             "avatar": user.get("avatar"),
             "bio": user.get("bio"),
             "meme_count": meme_count,
+            "is_admin": user.get("is_admin", False),
         }
     }
 
@@ -324,6 +327,7 @@ async def get_me(current_user: dict = Depends(get_required_user)):
         "bio": current_user.get("bio"),
         "meme_count": meme_count,
         "favorites_count": len(current_user.get("favorites", [])),
+        "is_admin": current_user.get("is_admin", False),
     }
 
 @api_router.put("/auth/me")
@@ -638,16 +642,17 @@ async def update_meme(meme_id: str, meme_data: MemeCreate, current_user: dict = 
     return {"message": "Meme updated"}
 
 @api_router.delete("/memes/{meme_id}")
-async def delete_meme(meme_id: str, current_user: dict = Depends(get_current_user)):
-    """Delete a meme"""
+async def delete_meme(meme_id: str, current_user: dict = Depends(get_required_user)):
+    """Delete a meme - Admin can delete any, users can only delete their own"""
     meme = await db.memes.find_one({"id": meme_id})
     if not meme:
         raise HTTPException(status_code=404, detail="Meme not found")
     
-    # Check if user owns the meme (if logged in) - allow admin delete for non-user memes
-    if meme.get("user_id") and current_user:
-        if meme["user_id"] != current_user["id"]:
-            raise HTTPException(status_code=403, detail="Not authorized to delete this meme")
+    is_admin = current_user.get("is_admin", False)
+    is_owner = meme.get("user_id") and meme["user_id"] == current_user["id"]
+    
+    if not is_admin and not is_owner:
+        raise HTTPException(status_code=403, detail="Not authorized to delete this meme")
     
     await db.memes.delete_one({"id": meme_id})
     
@@ -657,6 +662,7 @@ async def delete_meme(meme_id: str, current_user: dict = Depends(get_current_use
         {"$inc": {"meme_count": -1}}
     )
     
+    logger.info(f"Meme {meme_id} deleted by {'admin' if is_admin else 'owner'} {current_user['email']}")
     return {"message": "Meme deleted"}
 
 @api_router.post("/memes/{meme_id}/use")

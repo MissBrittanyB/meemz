@@ -63,6 +63,22 @@ export default function MemesScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [favorites, setFavorites] = useState<string[]>([]);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  // Check admin status
+  useEffect(() => {
+    const checkAdmin = async () => {
+      try {
+        const token = await AsyncStorage.getItem("memevault_token");
+        if (!token) return;
+        const res = await axios.get(`${API_URL}/api/auth/me`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        setIsAdmin(res.data?.is_admin === true);
+      } catch { /* not logged in */ }
+    };
+    checkAdmin();
+  }, []);
 
   // Initialize device ID on mount
   useEffect(() => {
@@ -255,20 +271,39 @@ export default function MemesScreen() {
   };
 
   const deleteMeme = async (meme: Meme) => {
-    try {
-      await axios.delete(`${API_URL}/api/memes/${meme.id}`);
-      setMemes(memes.filter((m) => m.id !== meme.id));
-      setSelectedMeme(null);
-      if (Platform.OS === "web") {
-        console.log("Meemz deleted successfully");
-      } else {
-        Alert.alert("Deleted!", "Meme has been removed");
+    const doDelete = async () => {
+      try {
+        const token = await AsyncStorage.getItem("memevault_token");
+        await axios.delete(`${API_URL}/api/memes/${meme.id}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        setMemes(memes.filter((m) => m.id !== meme.id));
+        setSelectedMeme(null);
+        if (Platform.OS === "web") {
+          console.log("Meemz deleted successfully");
+        } else {
+          Alert.alert("Deleted!", "Meme has been removed");
+        }
+      } catch (error: any) {
+        console.error("Error deleting:", error);
+        const msg = error?.response?.data?.detail || "Failed to delete meme";
+        if (Platform.OS !== "web") {
+          Alert.alert("Error", msg);
+        }
       }
-    } catch (error) {
-      console.error("Error deleting:", error);
-      if (Platform.OS !== "web") {
-        Alert.alert("Error", "Failed to delete meme");
-      }
+    };
+
+    if (Platform.OS === "web") {
+      doDelete();
+    } else {
+      Alert.alert(
+        "Delete Meme",
+        "Are you sure you want to delete this meme? This cannot be undone.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Delete", style: "destructive", onPress: doDelete },
+        ]
+      );
     }
   };
 
@@ -524,13 +559,15 @@ export default function MemesScreen() {
                     </Text>
                   </TouchableOpacity>
 
-                  <TouchableOpacity
-                    style={[styles.actionButton, styles.deleteButton]}
-                    onPress={() => deleteMeme(selectedMeme)}
-                  >
-                    <Ionicons name="trash-outline" size={24} color="#E74C3C" />
-                    <Text style={[styles.actionButtonText, { color: "#E74C3C" }]}>Delete</Text>
-                  </TouchableOpacity>
+                  {isAdmin && (
+                    <TouchableOpacity
+                      style={[styles.actionButton, styles.deleteButton]}
+                      onPress={() => deleteMeme(selectedMeme)}
+                    >
+                      <Ionicons name="trash-outline" size={24} color="#E74C3C" />
+                      <Text style={[styles.actionButtonText, { color: "#E74C3C" }]}>Delete</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
               </>
             )}

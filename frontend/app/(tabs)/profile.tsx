@@ -799,6 +799,40 @@ export default function ProfileScreen() {
                       {actionLoading === "save" ? <ActivityIndicator size="small" color="#FF7A1A" /> : <Ionicons name="download-outline" size={24} color="#fff" />}
                       <Text style={styles.modalActionText}>{actionLoading === "save" ? "Saving..." : "Save"}</Text>
                     </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.modalActionBtn, { borderColor: "#E74C3C" }]}
+                      onPress={() => {
+                        Alert.alert(
+                          "Delete Meme",
+                          "Are you sure you want to delete this meme? This cannot be undone.",
+                          [
+                            { text: "Cancel", style: "cancel" },
+                            {
+                              text: "Delete",
+                              style: "destructive",
+                              onPress: async () => {
+                                try {
+                                  const token = await AsyncStorage.getItem("memevault_token");
+                                  await axios.delete(`${API_URL}/api/memes/${selectedMeme.id}`, {
+                                    headers: { Authorization: `Bearer ${token}` },
+                                  });
+                                  setMyMemes((prev) => prev.filter((m) => m.id !== selectedMeme.id));
+                                  setSelectedMeme(null);
+                                  Alert.alert("Deleted!", "Meme has been removed from your profile");
+                                } catch (error: any) {
+                                  const msg = error?.response?.data?.detail || "Failed to delete meme";
+                                  Alert.alert("Error", msg);
+                                }
+                              },
+                            },
+                          ]
+                        );
+                      }}
+                    >
+                      <Ionicons name="trash-outline" size={24} color="#E74C3C" />
+                      <Text style={[styles.modalActionText, { color: "#E74C3C" }]}>Delete</Text>
+                    </TouchableOpacity>
                   </View>
                 </ScrollView>
               </View>
