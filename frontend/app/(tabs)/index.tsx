@@ -56,6 +56,7 @@ export default function MemesScreen() {
   const [hasMore, setHasMore] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [favorites, setFavorites] = useState<string[]>([]);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   // Initialize device ID on mount
   useEffect(() => {
@@ -198,22 +199,46 @@ export default function MemesScreen() {
   const shareMeme = async (meme: Meme) => {
     const authed = await requireAuth();
     if (!authed) return;
-    trackUsage(meme.id);
-    await shareMemeAction(meme);
+    setActionLoading("share");
+    try {
+      trackUsage(meme.id);
+      await shareMemeAction(meme);
+    } catch (e: any) {
+      console.error("shareMeme wrapper error:", e);
+      Alert.alert("Share Error", e?.message || "Unknown error occurred");
+    } finally {
+      setActionLoading(null);
+    }
   };
 
   const copyMeme = async (meme: Meme) => {
     const authed = await requireAuth();
     if (!authed) return;
-    trackUsage(meme.id);
-    await copyMemeAction(meme);
+    setActionLoading("copy");
+    try {
+      trackUsage(meme.id);
+      await copyMemeAction(meme);
+    } catch (e: any) {
+      console.error("copyMeme wrapper error:", e);
+      Alert.alert("Copy Error", e?.message || "Unknown error occurred");
+    } finally {
+      setActionLoading(null);
+    }
   };
 
   const saveToDevice = async (meme: Meme) => {
     const authed = await requireAuth();
     if (!authed) return;
-    trackUsage(meme.id);
-    await saveToDeviceAction(meme);
+    setActionLoading("save");
+    try {
+      trackUsage(meme.id);
+      await saveToDeviceAction(meme);
+    } catch (e: any) {
+      console.error("saveToDevice wrapper error:", e);
+      Alert.alert("Save Error", e?.message || "Unknown error occurred");
+    } finally {
+      setActionLoading(null);
+    }
   };
 
   const deleteMeme = async (meme: Meme) => {
@@ -394,19 +419,33 @@ export default function MemesScreen() {
 
                 <View style={styles.actionButtons}>
                   <TouchableOpacity
-                    style={styles.actionButton}
+                    style={[styles.actionButton, actionLoading === "share" && styles.actionButtonLoading]}
                     onPress={() => shareMeme(selectedMeme)}
+                    disabled={actionLoading !== null}
                   >
-                    <Ionicons name="share-outline" size={24} color="#fff" />
-                    <Text style={styles.actionButtonText}>Share</Text>
+                    {actionLoading === "share" ? (
+                      <ActivityIndicator size="small" color="#FF7A1A" />
+                    ) : (
+                      <Ionicons name="share-outline" size={24} color="#fff" />
+                    )}
+                    <Text style={styles.actionButtonText}>
+                      {actionLoading === "share" ? "Sharing..." : "Share"}
+                    </Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={styles.actionButton}
+                    style={[styles.actionButton, actionLoading === "copy" && styles.actionButtonLoading]}
                     onPress={() => copyMeme(selectedMeme)}
+                    disabled={actionLoading !== null}
                   >
-                    <Ionicons name="copy-outline" size={24} color="#fff" />
-                    <Text style={styles.actionButtonText}>Copy</Text>
+                    {actionLoading === "copy" ? (
+                      <ActivityIndicator size="small" color="#FF7A1A" />
+                    ) : (
+                      <Ionicons name="copy-outline" size={24} color="#fff" />
+                    )}
+                    <Text style={styles.actionButtonText}>
+                      {actionLoading === "copy" ? "Copying..." : "Copy"}
+                    </Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
@@ -441,11 +480,18 @@ export default function MemesScreen() {
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={styles.actionButton}
+                    style={[styles.actionButton, actionLoading === "save" && styles.actionButtonLoading]}
                     onPress={() => saveToDevice(selectedMeme)}
+                    disabled={actionLoading !== null}
                   >
-                    <Ionicons name="download-outline" size={24} color="#fff" />
-                    <Text style={styles.actionButtonText}>Save</Text>
+                    {actionLoading === "save" ? (
+                      <ActivityIndicator size="small" color="#FF7A1A" />
+                    ) : (
+                      <Ionicons name="download-outline" size={24} color="#fff" />
+                    )}
+                    <Text style={styles.actionButtonText}>
+                      {actionLoading === "save" ? "Saving..." : "Save"}
+                    </Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
@@ -653,6 +699,11 @@ const styles = StyleSheet.create({
   actionButtonActive: {
     backgroundColor: "rgba(255, 107, 53, 0.1)",
     borderRadius: 12,
+  },
+  actionButtonLoading: {
+    backgroundColor: "rgba(255, 122, 26, 0.15)",
+    borderRadius: 12,
+    opacity: 0.8,
   },
   deleteButton: {
     backgroundColor: "rgba(231, 76, 60, 0.1)",

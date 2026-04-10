@@ -10,6 +10,7 @@ import { router } from "expo-router";
 export async function requireAuth(): Promise<boolean> {
   try {
     const token = await AsyncStorage.getItem("memevault_token");
+    console.log("[authGate] Token check:", token ? "HAS TOKEN" : "NO TOKEN");
     if (token) return true;
 
     if (Platform.OS === "web") {
@@ -33,7 +34,8 @@ export async function requireAuth(): Promise<boolean> {
       );
     }
     return false;
-  } catch {
+  } catch (e: any) {
+    console.error("[authGate] Error checking auth:", e?.message || e);
     return false;
   }
 }

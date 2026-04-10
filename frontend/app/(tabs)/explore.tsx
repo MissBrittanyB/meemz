@@ -9,6 +9,7 @@ import {
   Modal,
   ActivityIndicator,
   RefreshControl,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -119,22 +120,34 @@ export default function ExploreScreen() {
   const shareMeme = async (meme: Meme) => {
     const authed = await requireAuth();
     if (!authed) return;
-    trackUsage(meme.id);
-    await shareMemeAction(meme);
+    try {
+      trackUsage(meme.id);
+      await shareMemeAction(meme);
+    } catch (e: any) {
+      Alert.alert("Share Error", e?.message || "Unknown error");
+    }
   };
 
   const copyMeme = async (meme: Meme) => {
     const authed = await requireAuth();
     if (!authed) return;
-    trackUsage(meme.id);
-    await copyMemeAction(meme);
+    try {
+      trackUsage(meme.id);
+      await copyMemeAction(meme);
+    } catch (e: any) {
+      Alert.alert("Copy Error", e?.message || "Unknown error");
+    }
   };
 
   const saveToDevice = async (meme: Meme) => {
     const authed = await requireAuth();
     if (!authed) return;
-    trackUsage(meme.id);
-    await saveToDeviceAction(meme);
+    try {
+      trackUsage(meme.id);
+      await saveToDeviceAction(meme);
+    } catch (e: any) {
+      Alert.alert("Save Error", e?.message || "Unknown error");
+    }
   };
 
   const openMeme = (meme: Meme) => {
