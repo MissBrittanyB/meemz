@@ -153,61 +153,112 @@ export default function MemesScreen() {
     try {
       trackUsage(meme.id);
 
-      // Extract base64 data
-      const base64Data = meme.image_base64.replace(
-        /^data:image\/\w+;base64,/,
-        ""
-      );
-      const fileUri = FileSystem.cacheDirectory + `meme_${meme.id}.png`;
-
-      await FileSystem.writeAsStringAsync(fileUri, base64Data, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(fileUri, {
-          mimeType: "image/png",
-          dialogTitle: "Share Meme",
-        });
+      if (Platform.OS === "web") {
+        // Web: Try native share API, fallback to download
+        if (navigator.share && navigator.canShare) {
+          // Convert base64 to blob for web sharing
+          const base64Data = meme.image_base64.replace(/^data:image\/\w+;base64,/, "");
+          const byteCharacters = atob(base64Data);
+          const byteNumbers = new Array(byteCharacters.length);
+          for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+          }
+          const byteArray = new Uint8Array(byteNumbers);
+          const blob = new Blob([byteArray], { type: "image/png" });
+          const file = new File([blob], `meme_${meme.id}.png`, { type: "image/png" });
+          
+          try {
+            await navigator.share({
+              files: [file],
+              title: meme.name,
+            });
+          } catch {
+            // Fallback to download
+            const link = document.createElement("a");
+            link.href = meme.image_base64;
+            link.download = `meme_${meme.id}.png`;
+            link.click();
+            window.alert("Meme downloaded! You can now share it from your downloads.");
+          }
+        } else {
+          // Direct download fallback
+          const link = document.createElement("a");
+          link.href = meme.image_base64;
+          link.download = `meme_${meme.id}.png`;
+          link.click();
+          window.alert("Meme downloaded! You can now share it from your downloads.");
+        }
       } else {
-        await Share.share({
-          message: `Check out this meme: ${meme.name}`,
+        // Mobile: Use native sharing
+        const base64Data = meme.image_base64.replace(/^data:image\/\w+;base64,/, "");
+        const fileUri = FileSystem.cacheDirectory + `meme_${meme.id}.png`;
+
+        await FileSystem.writeAsStringAsync(fileUri, base64Data, {
+          encoding: FileSystem.EncodingType.Base64,
         });
+
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(fileUri, {
+            mimeType: "image/png",
+            dialogTitle: "Share Meme to Messages, Instagram, WhatsApp...",
+          });
+        } else {
+          await Share.share({
+            message: `Check out this meme: ${meme.name}`,
+          });
+        }
       }
     } catch (error) {
       console.error("Error sharing:", error);
-      Alert.alert("Error", "Failed to share meme");
+      if (Platform.OS === "web") {
+        window.alert("Failed to share meme");
+      } else {
+        Alert.alert("Error", "Failed to share meme");
+      }
     }
   };
 
   const saveToDevice = async (meme: Meme) => {
     try {
-      const { status } = await MediaLibrary.requestPermissionsAsync();
-      if (status !== "granted") {
-        Alert.alert(
-          "Permission Required",
-          "Please grant permission to save images"
-        );
-        return;
-      }
-
-      const base64Data = meme.image_base64.replace(
-        /^data:image\/\w+;base64,/,
-        ""
-      );
-      const fileUri = FileSystem.cacheDirectory + `meme_${meme.id}.png`;
-
-      await FileSystem.writeAsStringAsync(fileUri, base64Data, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-
-      await MediaLibrary.saveToLibraryAsync(fileUri);
       trackUsage(meme.id);
 
-      Alert.alert("Saved!", "Meme saved to your photos");
+      if (Platform.OS === "web") {
+        // Web: Download the image
+        const link = document.createElement("a");
+        link.href = meme.image_base64;
+        link.download = `MemeVault_${meme.id}.png`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.alert("Meme saved to your downloads!");
+      } else {
+        // Mobile: Save to camera roll
+        const { status } = await MediaLibrary.requestPermissionsAsync();
+        if (status !== "granted") {
+          Alert.alert(
+            "Permission Required",
+            "Please grant permission to save images to your photos"
+          );
+          return;
+        }
+
+        const base64Data = meme.image_base64.replace(/^data:image\/\w+;base64,/, "");
+        const fileUri = FileSystem.cacheDirectory + `meme_${meme.id}.png`;
+
+        await FileSystem.writeAsStringAsync(fileUri, base64Data, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+
+        await MediaLibrary.saveToLibraryAsync(fileUri);
+        Alert.alert("Saved!", "Meme saved to your photos! 📸");
+      }
     } catch (error) {
       console.error("Error saving:", error);
-      Alert.alert("Error", "Failed to save meme");
+      if (Platform.OS === "web") {
+        window.alert("Failed to save meme");
+      } else {
+        Alert.alert("Error", "Failed to save meme");
+      }
     }
   };
 

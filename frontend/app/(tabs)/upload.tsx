@@ -11,13 +11,18 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  Modal,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import axios from "axios";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || "";
+
+// Admin password - change this to your desired password
+const ADMIN_PASSWORD = "memevault2024";
 
 interface Category {
   id: string;
@@ -27,12 +32,59 @@ interface Category {
 }
 
 export default function UploadScreen() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [passwordInput, setPasswordInput] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [passwordError, setPasswordError] = useState(false);
+  
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [memeName, setMemeName] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("");
   const [tags, setTags] = useState("");
   const [categories, setCategories] = useState<Category[]>([]);
   const [uploading, setUploading] = useState(false);
+
+  // Check if already authenticated
+  useEffect(() => {
+    checkAuth();
+  }, []);
+
+  const checkAuth = async () => {
+    try {
+      const savedAuth = await AsyncStorage.getItem("memevault_admin_auth");
+      if (savedAuth === "true") {
+        setIsAuthenticated(true);
+        fetchCategories();
+      }
+    } catch (e) {
+      console.error("Error checking auth:", e);
+    }
+  };
+
+  const handleLogin = async () => {
+    if (passwordInput === ADMIN_PASSWORD) {
+      setIsAuthenticated(true);
+      setPasswordError(false);
+      try {
+        await AsyncStorage.setItem("memevault_admin_auth", "true");
+      } catch (e) {
+        console.error("Error saving auth:", e);
+      }
+      fetchCategories();
+    } else {
+      setPasswordError(true);
+      setPasswordInput("");
+    }
+  };
+
+  const handleLogout = async () => {
+    setIsAuthenticated(false);
+    try {
+      await AsyncStorage.removeItem("memevault_admin_auth");
+    } catch (e) {
+      console.error("Error removing auth:", e);
+    }
+  };
 
   const fetchCategories = async () => {
     try {
@@ -46,17 +98,17 @@ export default function UploadScreen() {
     }
   };
 
-  useEffect(() => {
-    fetchCategories();
-  }, []);
-
   const pickImage = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== "granted") {
-      Alert.alert(
-        "Permission Required",
-        "Please grant permission to access your photos"
-      );
+      if (Platform.OS === "web") {
+        window.alert("Please grant permission to access your photos");
+      } else {
+        Alert.alert(
+          "Permission Required",
+          "Please grant permission to access your photos"
+        );
+      }
       return;
     }
 
@@ -78,17 +130,29 @@ export default function UploadScreen() {
 
   const uploadMeme = async () => {
     if (!selectedImage) {
-      Alert.alert("Error", "Please select an image");
+      if (Platform.OS === "web") {
+        window.alert("Please select an image");
+      } else {
+        Alert.alert("Error", "Please select an image");
+      }
       return;
     }
 
     if (!memeName.trim()) {
-      Alert.alert("Error", "Please enter a name for the meme");
+      if (Platform.OS === "web") {
+        window.alert("Please enter a name for the meme");
+      } else {
+        Alert.alert("Error", "Please enter a name for the meme");
+      }
       return;
     }
 
     if (!selectedCategory) {
-      Alert.alert("Error", "Please select a category");
+      if (Platform.OS === "web") {
+        window.alert("Please select a category");
+      } else {
+        Alert.alert("Error", "Please select a category");
+      }
       return;
     }
 
@@ -107,24 +171,94 @@ export default function UploadScreen() {
         tags: tagsArray,
       });
 
-      Alert.alert("Success!", "Meme uploaded successfully! 🎉", [
-        {
-          text: "Upload Another",
-          onPress: () => {
-            setSelectedImage(null);
-            setMemeName("");
-            setTags("");
+      if (Platform.OS === "web") {
+        window.alert("Meme uploaded successfully! 🎉");
+        setSelectedImage(null);
+        setMemeName("");
+        setTags("");
+      } else {
+        Alert.alert("Success!", "Meme uploaded successfully! 🎉", [
+          {
+            text: "Upload Another",
+            onPress: () => {
+              setSelectedImage(null);
+              setMemeName("");
+              setTags("");
+            },
           },
-        },
-      ]);
+        ]);
+      }
     } catch (error) {
       console.error("Error uploading meme:", error);
-      Alert.alert("Error", "Failed to upload meme. Please try again.");
+      if (Platform.OS === "web") {
+        window.alert("Failed to upload meme. Please try again.");
+      } else {
+        Alert.alert("Error", "Failed to upload meme. Please try again.");
+      }
     } finally {
       setUploading(false);
     }
   };
 
+  // Login Screen
+  if (!isAuthenticated) {
+    return (
+      <SafeAreaView style={styles.container} edges={["top"]}>
+        <View style={styles.loginContainer}>
+          <View style={styles.lockIconContainer}>
+            <Ionicons name="lock-closed" size={60} color="#FF6B35" />
+          </View>
+          <Text style={styles.loginTitle}>Admin Access</Text>
+          <Text style={styles.loginSubtitle}>
+            Enter password to upload memes
+          </Text>
+
+          <View style={styles.passwordContainer}>
+            <TextInput
+              style={styles.passwordInput}
+              placeholder="Enter admin password"
+              placeholderTextColor="#666"
+              value={passwordInput}
+              onChangeText={(text) => {
+                setPasswordInput(text);
+                setPasswordError(false);
+              }}
+              secureTextEntry={!showPassword}
+              autoCapitalize="none"
+            />
+            <TouchableOpacity
+              style={styles.eyeButton}
+              onPress={() => setShowPassword(!showPassword)}
+            >
+              <Ionicons
+                name={showPassword ? "eye-off" : "eye"}
+                size={24}
+                color="#666"
+              />
+            </TouchableOpacity>
+          </View>
+
+          {passwordError && (
+            <Text style={styles.errorText}>Incorrect password. Try again.</Text>
+          )}
+
+          <TouchableOpacity
+            style={[
+              styles.loginButton,
+              !passwordInput && styles.loginButtonDisabled,
+            ]}
+            onPress={handleLogin}
+            disabled={!passwordInput}
+          >
+            <Ionicons name="log-in" size={24} color="#fff" />
+            <Text style={styles.loginButtonText}>Access Upload</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // Upload Screen (authenticated)
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       <KeyboardAvoidingView
@@ -136,8 +270,18 @@ export default function UploadScreen() {
           contentContainerStyle={styles.scrollContent}
         >
           <View style={styles.header}>
-            <Text style={styles.title}>Upload</Text>
-            <Text style={styles.subtitle}>Add memes to your vault 📤</Text>
+            <View style={styles.headerRow}>
+              <View>
+                <Text style={styles.title}>Upload</Text>
+                <Text style={styles.subtitle}>Add memes to your vault 📤</Text>
+              </View>
+              <TouchableOpacity
+                style={styles.logoutButton}
+                onPress={handleLogout}
+              >
+                <Ionicons name="log-out-outline" size={24} color="#E74C3C" />
+              </TouchableOpacity>
+            </View>
           </View>
 
           {/* Image Picker */}
@@ -256,6 +400,78 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#0A0A0A",
   },
+  // Login styles
+  loginContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 32,
+  },
+  lockIconContainer: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: "rgba(255, 107, 53, 0.1)",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 24,
+  },
+  loginTitle: {
+    fontSize: 28,
+    fontWeight: "bold",
+    color: "#fff",
+    marginBottom: 8,
+  },
+  loginSubtitle: {
+    fontSize: 16,
+    color: "#888",
+    marginBottom: 32,
+    textAlign: "center",
+  },
+  passwordContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#1A1A1A",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#333",
+    width: "100%",
+    marginBottom: 16,
+  },
+  passwordInput: {
+    flex: 1,
+    color: "#fff",
+    fontSize: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  eyeButton: {
+    padding: 14,
+  },
+  errorText: {
+    color: "#E74C3C",
+    fontSize: 14,
+    marginBottom: 16,
+  },
+  loginButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FF6B35",
+    width: "100%",
+    paddingVertical: 16,
+    borderRadius: 12,
+    gap: 8,
+  },
+  loginButtonDisabled: {
+    backgroundColor: "#333",
+  },
+  loginButtonText: {
+    color: "#fff",
+    fontSize: 18,
+    fontWeight: "bold",
+  },
+  // Upload screen styles
   keyboardAvoid: {
     flex: 1,
   },
@@ -267,6 +483,11 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     paddingBottom: 16,
   },
+  headerRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+  },
   title: {
     fontSize: 32,
     fontWeight: "bold",
@@ -276,6 +497,11 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#888",
     marginTop: 4,
+  },
+  logoutButton: {
+    padding: 8,
+    backgroundColor: "rgba(231, 76, 60, 0.1)",
+    borderRadius: 8,
   },
   imagePicker: {
     marginHorizontal: 16,
