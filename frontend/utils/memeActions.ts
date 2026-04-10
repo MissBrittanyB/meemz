@@ -8,11 +8,11 @@ interface MemeData {
   id: string;
   name: string;
   image_base64: string;
+  media_type?: string;
 }
 
 /**
  * Extracts raw base64 data from a data URI string.
- * Handles "data:image/jpeg;base64,/9j/4AAQ..." format
  */
 function extractBase64(imageData: string): string {
   if (!imageData) return "";
@@ -24,28 +24,56 @@ function extractBase64(imageData: string): string {
 }
 
 /**
- * Detects the image extension from a base64 data URI
+ * Detects if the meme is a GIF (animated)
  */
-function getImageExtension(imageData: string): string {
-  if (!imageData) return "png";
-  const match = imageData.match(/^data:image\/([a-zA-Z+]+);base64,/);
-  if (match) {
-    const type = match[1].toLowerCase();
-    if (type === "jpeg" || type === "jpg") return "jpg";
-    if (type === "gif") return "gif";
-    if (type === "webp") return "webp";
-  }
-  return "png";
+function isGif(meme: MemeData): boolean {
+  if (meme.media_type === "gif") return true;
+  if (meme.image_base64?.startsWith("data:image/gif")) return true;
+  return false;
 }
 
 /**
- * Writes base64 image data to a temporary cache file.
+ * Detects if the meme is a video
+ */
+function isVideo(meme: MemeData): boolean {
+  if (meme.media_type === "video") return true;
+  if (meme.image_base64?.startsWith("data:video/")) return true;
+  return false;
+}
+
+/**
+ * Gets the file extension, MIME type, and iOS UTI for the meme
+ */
+function getMediaInfo(meme: MemeData): { ext: string; mimeType: string; uti: string } {
+  // Check media_type field first
+  if (isGif(meme)) {
+    return { ext: "gif", mimeType: "image/gif", uti: "com.compuserve.gif" };
+  }
+  if (isVideo(meme)) {
+    return { ext: "mp4", mimeType: "video/mp4", uti: "public.mpeg-4" };
+  }
+
+  // Fall back to data URI detection
+  const b64 = meme.image_base64 || "";
+  const match = b64.match(/^data:([^;]+);base64,/);
+  if (match) {
+    const mime = match[1].toLowerCase();
+    if (mime === "image/gif") return { ext: "gif", mimeType: "image/gif", uti: "com.compuserve.gif" };
+    if (mime === "video/mp4") return { ext: "mp4", mimeType: "video/mp4", uti: "public.mpeg-4" };
+    if (mime === "video/quicktime") return { ext: "mov", mimeType: "video/quicktime", uti: "com.apple.quicktime-movie" };
+    if (mime === "image/jpeg" || mime === "image/jpg") return { ext: "jpg", mimeType: "image/jpeg", uti: "public.jpeg" };
+    if (mime === "image/webp") return { ext: "webp", mimeType: "image/webp", uti: "public.webp" };
+  }
+
+  return { ext: "png", mimeType: "image/png", uti: "public.png" };
+}
+
+/**
+ * Writes base64 data to a temporary cache file.
  * Returns the local file:// URI.
  */
 async function writeToTempFile(meme: MemeData): Promise<string> {
   console.log("[memeActions] writeToTempFile - starting");
-  console.log("[memeActions] FileSystem available:", !!FileSystem);
-  console.log("[memeActions] cacheDirectory:", FileSystem.cacheDirectory);
 
   if (!FileSystem.cacheDirectory) {
     throw new Error("FileSystem.cacheDirectory is not available");
@@ -56,11 +84,11 @@ async function writeToTempFile(meme: MemeData): Promise<string> {
     throw new Error("Base64 data is empty or too short");
   }
 
-  const ext = getImageExtension(meme.image_base64);
+  const { ext } = getMediaInfo(meme);
   const filename = `meemz_${meme.id}_${Date.now()}.${ext}`;
   const fileUri = FileSystem.cacheDirectory + filename;
 
-  console.log("[memeActions] Writing to:", fileUri);
+  console.log("[memeActions] Writing to:", fileUri, "ext:", ext);
   console.log("[memeActions] Base64 length:", rawBase64.length);
 
   await FileSystem.writeAsStringAsync(fileUri, rawBase64, {
@@ -78,7 +106,7 @@ async function writeToTempFile(meme: MemeData): Promise<string> {
 }
 
 /**
- * Cleanup helper - deletes a temp file silently
+ * Cleanup helper
  */
 async function cleanupFile(fileUri: string): Promise<void> {
   try {
@@ -92,7 +120,7 @@ async function cleanupFile(fileUri: string): Promise<void> {
 // COPY
 // ============================================================
 export async function copyMemeAction(meme: MemeData): Promise<boolean> {
-  console.log("[memeActions] copyMemeAction called for:", meme.name);
+  console.log("[memeActions] copyMemeAction called for:", meme.name, "isGif:", isGif(meme));
 
   try {
     // --- WEB ---
@@ -109,7 +137,34 @@ export async function copyMemeAction(meme: MemeData): Promise<boolean> {
       }
     }
 
-    // --- NATIVE (iOS / Android) ---
+    // --- NATIVE: GIFs and Videos ---
+    // Clipboard.setImageAsync doesn't support animated GIFs or videos.
+    // For GIFs/videos, we use the share sheet so the user can send it directly.
+    if (isGif(meme) || isVideo(meme)) {
+      console.log("[memeActions] GIF/Video detected - using share sheet for copy");
+      const fileUri = await writeToTempFile(meme);
+      const isAvailable = await Sharing.isAvailableAsync();
+
+      if (isAvailable) {
+        const { mimeType, uti } = getMediaInfo(meme);
+        Alert.alert(
+          "Copy GIF",
+          "GIFs can't be copied to clipboard directly. Use the share sheet to send it!",
+        );
+        await Sharing.shareAsync(fileUri, {
+          mimeType,
+          dialogTitle: "Share this Meemz GIF",
+          UTI: uti,
+        });
+        setTimeout(() => cleanupFile(fileUri), 30000);
+        return true;
+      }
+
+      Alert.alert("Copy Issue", "Could not copy GIF. Try using Share instead.");
+      return false;
+    }
+
+    // --- NATIVE: Static Images ---
     const rawBase64 = extractBase64(meme.image_base64);
     console.log("[memeActions] Attempting Clipboard.setImageAsync, base64 length:", rawBase64.length);
 
@@ -120,16 +175,13 @@ export async function copyMemeAction(meme: MemeData): Promise<boolean> {
     } catch (clipErr: any) {
       console.log("[memeActions] setImageAsync failed:", clipErr?.message || clipErr);
 
-      // Fallback: write to file then open share sheet for manual copy
+      // Fallback: share sheet
       try {
         const fileUri = await writeToTempFile(meme);
         const isAvailable = await Sharing.isAvailableAsync();
-
         if (isAvailable) {
-          await Sharing.shareAsync(fileUri, {
-            mimeType: "image/png",
-            dialogTitle: "Copy this Meemz",
-          });
+          const { mimeType, uti } = getMediaInfo(meme);
+          await Sharing.shareAsync(fileUri, { mimeType, dialogTitle: "Copy this Meemz", UTI: uti });
           setTimeout(() => cleanupFile(fileUri), 30000);
           return true;
         }
@@ -153,15 +205,16 @@ export async function copyMemeAction(meme: MemeData): Promise<boolean> {
 // SHARE
 // ============================================================
 export async function shareMemeAction(meme: MemeData): Promise<boolean> {
-  console.log("[memeActions] shareMemeAction called for:", meme.name);
+  console.log("[memeActions] shareMemeAction called for:", meme.name, "isGif:", isGif(meme));
 
   try {
     // --- WEB ---
     if (Platform.OS === "web") {
+      const { ext } = getMediaInfo(meme);
       try {
         const link = document.createElement("a");
         link.href = meme.image_base64;
-        link.download = `meemz_${meme.id}.png`;
+        link.download = `meemz_${meme.id}.${ext}`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -181,15 +234,14 @@ export async function shareMemeAction(meme: MemeData): Promise<boolean> {
     }
 
     const fileUri = await writeToTempFile(meme);
-    const ext = getImageExtension(meme.image_base64);
-    const mimeType = ext === "jpg" ? "image/jpeg" : `image/${ext}`;
+    const { mimeType, uti } = getMediaInfo(meme);
 
-    console.log("[memeActions] Sharing file:", fileUri, "mimeType:", mimeType);
+    console.log("[memeActions] Sharing file:", fileUri, "mimeType:", mimeType, "UTI:", uti);
 
     await Sharing.shareAsync(fileUri, {
       mimeType,
       dialogTitle: "Share Meemz",
-      UTI: ext === "jpg" ? "public.jpeg" : "public.png",
+      UTI: uti,
     });
 
     // Delayed cleanup
@@ -209,15 +261,16 @@ export async function shareMemeAction(meme: MemeData): Promise<boolean> {
 // SAVE TO DEVICE
 // ============================================================
 export async function saveToDeviceAction(meme: MemeData): Promise<boolean> {
-  console.log("[memeActions] saveToDeviceAction called for:", meme.name);
+  console.log("[memeActions] saveToDeviceAction called for:", meme.name, "isGif:", isGif(meme));
 
   try {
     // --- WEB ---
     if (Platform.OS === "web") {
+      const { ext } = getMediaInfo(meme);
       try {
         const link = document.createElement("a");
         link.href = meme.image_base64;
-        link.download = `meemz_${meme.id}.png`;
+        link.download = `meemz_${meme.id}.${ext}`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -250,7 +303,8 @@ export async function saveToDeviceAction(meme: MemeData): Promise<boolean> {
     // Cleanup temp file
     await cleanupFile(fileUri);
 
-    Alert.alert("Saved!", "Meemz saved to your photos!");
+    const mediaLabel = isGif(meme) ? "GIF" : isVideo(meme) ? "video" : "image";
+    Alert.alert("Saved!", `Meemz ${mediaLabel} saved to your photos!`);
     return true;
   } catch (error: any) {
     console.error("[memeActions] saveToDeviceAction error:", error?.message || error);
