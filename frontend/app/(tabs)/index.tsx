@@ -166,24 +166,17 @@ export default function MemesScreen() {
       }
       
       // Request permissions first
-      const { status } = await MediaLibrary.requestPermissionsAsync();
+      await MediaLibrary.requestPermissionsAsync();
       
       // Mobile: Save to temp file in document directory
       const base64Data = meme.image_base64.replace(/^data:image\/\w+;base64,/, "");
       const filename = `meme_share_${Date.now()}.png`;
       const fileUri = `${FileSystem.documentDirectory}${filename}`;
 
-      // Write file
+      // Write file using string encoding type
       await FileSystem.writeAsStringAsync(fileUri, base64Data, {
-        encoding: FileSystem.EncodingType.Base64,
+        encoding: 'base64',
       });
-
-      // Verify file exists
-      const fileInfo = await FileSystem.getInfoAsync(fileUri);
-      
-      if (!fileInfo.exists) {
-        throw new Error("Could not create temp file");
-      }
 
       // Share using Sharing API
       const isAvailable = await Sharing.isAvailableAsync();
@@ -200,7 +193,7 @@ export default function MemesScreen() {
         });
       }
       
-      // Cleanup temp file
+      // Cleanup temp file after a delay
       setTimeout(async () => {
         try {
           await FileSystem.deleteAsync(fileUri, { idempotent: true });
@@ -214,11 +207,10 @@ export default function MemesScreen() {
       try {
         await Share.share({
           message: "Check out this meme from MemeVault!",
-          url: meme.image_base64,
         });
       } catch (fallbackError) {
         if (Platform.OS !== "web") {
-          Alert.alert("Share Error", "Unable to share directly. Please try again.");
+          Alert.alert("Share Error", "Unable to share. Please try again.");
         }
       }
     }
@@ -249,10 +241,10 @@ export default function MemesScreen() {
         }
 
         const base64Data = meme.image_base64.replace(/^data:image\/\w+;base64,/, "");
-        const fileUri = FileSystem.cacheDirectory + `meme_${meme.id}.png`;
+        const fileUri = `${FileSystem.cacheDirectory}meme_${meme.id}.png`;
 
         await FileSystem.writeAsStringAsync(fileUri, base64Data, {
-          encoding: FileSystem.EncodingType.Base64,
+          encoding: 'base64',
         });
 
         await MediaLibrary.saveToLibraryAsync(fileUri);
