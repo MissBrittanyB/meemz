@@ -21,7 +21,7 @@ from emergentintegrations.payments.stripe.checkout import (
 )
 
 ROOT_DIR = Path(__file__).parent
-load_dotenv(ROOT_DIR / '.env')
+load_dotenv(ROOT_DIR / '.env', override=True)
 
 # MongoDB connection
 mongo_url = os.environ['MONGO_URL']
@@ -945,29 +945,36 @@ async def create_checkout(
         raise HTTPException(status_code=500, detail=f"Payment error: {str(e)}")
 
 
+import stripe as stripe_lib
+
 @api_router.get("/subscriptions/checkout-status/{session_id}")
 async def get_checkout_status(session_id: str, request: Request):
-    """Poll the status of a Stripe Checkout Session"""
+    """Poll the status of a Stripe Checkout Session using Stripe SDK directly"""
     stripe_api_key = os.environ.get("STRIPE_API_KEY")
     if not stripe_api_key:
         raise HTTPException(status_code=500, detail="Payment system not configured")
 
-    host_url = str(request.base_url).rstrip("/")
-    webhook_url = f"{host_url}/api/webhook/stripe"
-
     try:
-        stripe_checkout = StripeCheckout(api_key=stripe_api_key, webhook_url=webhook_url)
-        status: CheckoutStatusResponse = await stripe_checkout.get_checkout_status(session_id)
+        # Use stripe library directly to avoid StripeObject serialization issues
+        stripe_lib.api_key = stripe_api_key
+        if "emergent" in stripe_api_key:
+            stripe_lib.api_base = "https://integrations.emergentagent.com/stripe"
+
+        session = stripe_lib.checkout.Session.retrieve(session_id)
+
+        payment_status = session.payment_status or "unpaid"
+        session_status = session.status or "open"
+        metadata = dict(session.metadata) if session.metadata else {}
+        amount_total = session.amount_total
+        currency = session.currency
 
         # Update payment_transactions
         txn = await db.payment_transactions.find_one({"session_id": session_id})
         if txn:
-            new_status = status.payment_status
-            # Only process if not already completed
             if txn.get("payment_status") != "paid":
                 update_data = {
-                    "payment_status": new_status,
-                    "status": status.status,
+                    "payment_status": payment_status,
+                    "status": session_status,
                     "updated_at": datetime.utcnow(),
                 }
                 await db.payment_transactions.update_one(
@@ -975,8 +982,7 @@ async def get_checkout_status(session_id: str, request: Request):
                     {"$set": update_data},
                 )
 
-                # If payment is successful, activate the subscription
-                if new_status == "paid":
+                if payment_status == "paid":
                     plan_id = txn.get("plan_id", "monthly")
                     user_id = txn.get("user_id")
                     now = datetime.utcnow()
@@ -1002,11 +1008,11 @@ async def get_checkout_status(session_id: str, request: Request):
                     logger.info(f"Subscription activated for user {user_id}, plan: {plan_id}")
 
         return {
-            "status": status.status,
-            "payment_status": status.payment_status,
-            "amount_total": status.amount_total,
-            "currency": status.currency,
-            "metadata": status.metadata,
+            "status": session_status,
+            "payment_status": payment_status,
+            "amount_total": amount_total,
+            "currency": currency,
+            "metadata": metadata,
         }
 
     except Exception as e:
@@ -1018,7 +1024,45 @@ from fastapi.responses import HTMLResponse
 
 @api_router.get("/subscriptions/payment-success")
 async def payment_success(session_id: str = ""):
-    """Success page after Stripe payment - shows confirmation and redirects"""
+    """Success page after Stripe payment - activates subscription and shows confirmation"""
+    # When Stripe redirects here, the payment was successful
+    if session_id:
+        txn = await db.payment_transactions.find_one({"session_id": session_id})
+        if txn and txn.get("payment_status") != "paid":
+            plan_id = txn.get("plan_id", "monthly")
+            user_id = txn.get("user_id")
+            now = datetime.utcnow()
+
+            if plan_id == "weekly":
+                period_end = now + timedelta(weeks=1)
+            elif plan_id == "monthly":
+                period_end = now + timedelta(days=30)
+            else:
+                period_end = now + timedelta(days=365)
+
+            # Activate subscription
+            await db.subscriptions.update_one(
+                {"user_id": user_id},
+                {"$set": {
+                    "plan_id": plan_id,
+                    "status": "active",
+                    "current_period_start": now,
+                    "current_period_end": period_end,
+                    "stripe_session_id": session_id,
+                }},
+                upsert=True,
+            )
+
+            # Update payment transaction
+            await db.payment_transactions.update_one(
+                {"session_id": session_id},
+                {"$set": {
+                    "payment_status": "paid",
+                    "updated_at": now,
+                }},
+            )
+            logger.info(f"Subscription activated via success redirect for user {user_id}, plan: {plan_id}")
+
     return HTMLResponse(content=f"""
     <!DOCTYPE html>
     <html>

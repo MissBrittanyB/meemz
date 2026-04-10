@@ -173,16 +173,18 @@ export default function PricingScreen() {
   };
 
   const pollPaymentStatus = async (sessionId: string) => {
+    // Check our DB for payment status (not Stripe directly)
     for (let i = 0; i < 5; i++) {
       try {
         const res = await axios.get(
-          `${API_URL}/api/subscriptions/checkout-status/${sessionId}`
+          `${API_URL}/api/subscriptions/status`,
+          { headers: { Authorization: `Bearer ${token}` } }
         );
 
-        if (res.data.payment_status === "paid") {
+        if (res.data.is_premium || res.data.status === "active") {
           setSubStatus({
             status: "active",
-            plan_id: selectedPlan,
+            plan_id: res.data.plan_id || selectedPlan,
             trial_available: false,
             is_premium: true,
           });
@@ -190,9 +192,6 @@ export default function PricingScreen() {
             "Payment Successful!",
             "Welcome to meemz premium! Enjoy unlimited access."
           );
-          return;
-        } else if (res.data.status === "expired") {
-          Alert.alert("Session Expired", "Payment session expired. Please try again.");
           return;
         }
       } catch (e) {
@@ -202,7 +201,7 @@ export default function PricingScreen() {
       await new Promise((resolve) => setTimeout(resolve, 2000));
     }
 
-    // After 5 attempts, check one more time
+    // After 5 attempts, offer to refresh
     Alert.alert(
       "Processing",
       "Your payment is being processed. Check back in a moment.",
