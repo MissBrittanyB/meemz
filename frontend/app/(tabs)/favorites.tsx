@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -12,23 +12,19 @@ import {
   Share,
   Dimensions,
   RefreshControl,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import * as FileSystem from "expo-file-system";
+import * as FileSystem from "expo-file-system/legacy";
 import * as MediaLibrary from "expo-media-library";
 import * as Sharing from "expo-sharing";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || "";
 const { width } = Dimensions.get("window");
 const MEME_SIZE = (width - 48) / 3;
-
-const getDeviceId = () => {
-  return "memevault_device_" + Math.random().toString(36).substring(7);
-};
-
-const DEVICE_ID = getDeviceId();
 
 interface Meme {
   id: string;
@@ -41,15 +37,34 @@ interface Meme {
 }
 
 export default function FavoritesScreen() {
+  const [deviceId, setDeviceId] = useState<string>("");
   const [favorites, setFavorites] = useState<Meme[]>([]);
   const [selectedMeme, setSelectedMeme] = useState<Meme | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
+  useEffect(() => {
+    const initDeviceId = async () => {
+      try {
+        let storedId = await AsyncStorage.getItem("memevault_device_id");
+        if (!storedId) {
+          storedId = "memevault_" + Date.now() + "_" + Math.random().toString(36).substring(7);
+          await AsyncStorage.setItem("memevault_device_id", storedId);
+        }
+        setDeviceId(storedId);
+      } catch (e) {
+        const fallbackId = "memevault_web_" + Date.now();
+        setDeviceId(fallbackId);
+      }
+    };
+    initDeviceId();
+  }, []);
+
   const fetchFavorites = async () => {
+    if (!deviceId) return;
     try {
       const response = await axios.get(
-        `${API_URL}/api/user/${DEVICE_ID}/favorites`
+        `${API_URL}/api/user/${deviceId}/favorites`
       );
       setFavorites(response.data);
     } catch (error) {
@@ -60,8 +75,10 @@ export default function FavoritesScreen() {
   };
 
   useEffect(() => {
-    fetchFavorites();
-  }, []);
+    if (deviceId) {
+      fetchFavorites();
+    }
+  }, [deviceId]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -70,8 +87,9 @@ export default function FavoritesScreen() {
   };
 
   const removeFavorite = async (memeId: string) => {
+    if (!deviceId) return;
     try {
-      await axios.post(`${API_URL}/api/user/${DEVICE_ID}/favorites`, {
+      await axios.post(`${API_URL}/api/user/${deviceId}/favorites`, {
         meme_id: memeId,
       });
       setFavorites(favorites.filter((m) => m.id !== memeId));
@@ -84,8 +102,9 @@ export default function FavoritesScreen() {
   };
 
   const trackUsage = async (memeId: string) => {
+    if (!deviceId) return;
     try {
-      await axios.post(`${API_URL}/api/user/${DEVICE_ID}/recent`, {
+      await axios.post(`${API_URL}/api/user/${deviceId}/recent`, {
         meme_id: memeId,
       });
     } catch (error) {
@@ -97,60 +116,84 @@ export default function FavoritesScreen() {
     try {
       trackUsage(meme.id);
 
-      const base64Data = meme.image_base64.replace(
-        /^data:image\/\w+;base64,/,
-        ""
-      );
-      const fileUri = FileSystem.cacheDirectory + `meme_${meme.id}.png`;
+      if (Platform.OS === "web") {
+        const link = document.createElement("a");
+        link.href = meme.image_base64;
+        link.download = `MemeVault_${meme.id}.png`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.alert("Meme downloaded!");
+        return;
+      }
+
+      const base64Data = meme.image_base64.replace(/^data:image\/\w+;base64,/, "");
+      const filename = `MemeVault_Share_${Date.now()}.png`;
+      const fileUri = `${FileSystem.documentDirectory}${filename}`;
 
       await FileSystem.writeAsStringAsync(fileUri, base64Data, {
-        encoding: FileSystem.EncodingType.Base64,
+        encoding: "base64",
       });
 
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(fileUri, {
           mimeType: "image/png",
-          dialogTitle: "Share Meme",
-        });
-      } else {
-        await Share.share({
-          message: `Check out this meme: ${meme.name}`,
+          UTI: "public.png",
         });
       }
+
+      setTimeout(async () => {
+        try {
+          await FileSystem.deleteAsync(fileUri, { idempotent: true });
+        } catch (e) {}
+      }, 10000);
+
     } catch (error) {
       console.error("Error sharing:", error);
-      Alert.alert("Error", "Failed to share meme");
+      if (Platform.OS !== "web") {
+        Alert.alert("Error", "Failed to share meme");
+      }
     }
   };
 
   const saveToDevice = async (meme: Meme) => {
     try {
-      const { status } = await MediaLibrary.requestPermissionsAsync();
-      if (status !== "granted") {
-        Alert.alert(
-          "Permission Required",
-          "Please grant permission to save images"
-        );
+      trackUsage(meme.id);
+
+      if (Platform.OS === "web") {
+        const link = document.createElement("a");
+        link.href = meme.image_base64;
+        link.download = `MemeVault_${meme.id}.png`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.alert("Meme saved!");
         return;
       }
 
-      const base64Data = meme.image_base64.replace(
-        /^data:image\/\w+;base64,/,
-        ""
-      );
-      const fileUri = FileSystem.cacheDirectory + `meme_${meme.id}.png`;
+      const { status } = await MediaLibrary.requestPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert("Permission Required", "Please grant permission to save images");
+        return;
+      }
+
+      const base64Data = meme.image_base64.replace(/^data:image\/\w+;base64,/, "");
+      const filename = `MemeVault_${Date.now()}.png`;
+      const fileUri = `${FileSystem.documentDirectory}${filename}`;
 
       await FileSystem.writeAsStringAsync(fileUri, base64Data, {
-        encoding: FileSystem.EncodingType.Base64,
+        encoding: "base64",
       });
 
-      await MediaLibrary.saveToLibraryAsync(fileUri);
-      trackUsage(meme.id);
+      await MediaLibrary.createAssetAsync(fileUri);
+      await FileSystem.deleteAsync(fileUri, { idempotent: true });
 
-      Alert.alert("Saved!", "Meme saved to your photos");
+      Alert.alert("Saved!", "Meme saved to your photos! 📸");
     } catch (error) {
       console.error("Error saving:", error);
-      Alert.alert("Error", "Failed to save meme");
+      if (Platform.OS !== "web") {
+        Alert.alert("Error", "Failed to save meme");
+      }
     }
   };
 
@@ -173,8 +216,7 @@ export default function FavoritesScreen() {
       <View style={styles.header}>
         <Text style={styles.title}>Favorites</Text>
         <Text style={styles.subtitle}>
-          {favorites.length} saved {favorites.length === 1 ? "meme" : "memes"}{" "}
-          ❤️
+          {favorites.length} saved {favorites.length === 1 ? "meme" : "memes"} ❤️
         </Text>
       </View>
 
@@ -209,7 +251,6 @@ export default function FavoritesScreen() {
         />
       )}
 
-      {/* Meme Preview Modal */}
       <Modal
         visible={selectedMeme !== null}
         transparent
@@ -234,9 +275,7 @@ export default function FavoritesScreen() {
                 />
 
                 <Text style={styles.modalTitle}>{selectedMeme.name}</Text>
-                <Text style={styles.modalCategory}>
-                  {selectedMeme.category}
-                </Text>
+                <Text style={styles.modalCategory}>{selectedMeme.category}</Text>
 
                 <View style={styles.actionButtons}>
                   <TouchableOpacity

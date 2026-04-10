@@ -17,23 +17,15 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import * as Clipboard from "expo-clipboard";
-import * as FileSystem from "expo-file-system";
+import * as FileSystem from "expo-file-system/legacy";
 import * as MediaLibrary from "expo-media-library";
 import * as Sharing from "expo-sharing";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || "";
 const { width } = Dimensions.get("window");
 const MEME_SIZE = (width - 48) / 3;
-
-// Generate a simple device ID
-const getDeviceId = () => {
-  const stored = "memevault_device_" + Math.random().toString(36).substring(7);
-  return stored;
-};
-
-const DEVICE_ID = getDeviceId();
 
 interface Meme {
   id: string;
@@ -53,6 +45,7 @@ interface Category {
 }
 
 export default function MemesScreen() {
+  const [deviceId, setDeviceId] = useState<string>("");
   const [memes, setMemes] = useState<Meme[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>("All");
@@ -61,6 +54,25 @@ export default function MemesScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [favorites, setFavorites] = useState<string[]>([]);
+
+  // Initialize device ID on mount
+  useEffect(() => {
+    const initDeviceId = async () => {
+      try {
+        let storedId = await AsyncStorage.getItem("memevault_device_id");
+        if (!storedId) {
+          storedId = "memevault_" + Date.now() + "_" + Math.random().toString(36).substring(7);
+          await AsyncStorage.setItem("memevault_device_id", storedId);
+        }
+        setDeviceId(storedId);
+      } catch (e) {
+        // Fallback for web
+        const fallbackId = "memevault_web_" + Date.now();
+        setDeviceId(fallbackId);
+      }
+    };
+    initDeviceId();
+  }, []);
 
   const fetchMemes = useCallback(async () => {
     try {
@@ -84,29 +96,35 @@ export default function MemesScreen() {
     }
   };
 
-  const fetchFavorites = async () => {
+  const fetchFavorites = useCallback(async () => {
+    if (!deviceId) return;
     try {
       const response = await axios.get(
-        `${API_URL}/api/user/${DEVICE_ID}/favorites`
+        `${API_URL}/api/user/${deviceId}/favorites`
       );
       setFavorites(response.data.map((m: Meme) => m.id));
     } catch (error) {
       console.error("Error fetching favorites:", error);
     }
-  };
+  }, [deviceId]);
+
+  // Load data when deviceId is ready
+  useEffect(() => {
+    if (deviceId) {
+      const loadData = async () => {
+        setLoading(true);
+        await Promise.all([fetchMemes(), fetchCategories(), fetchFavorites()]);
+        setLoading(false);
+      };
+      loadData();
+    }
+  }, [deviceId]);
 
   useEffect(() => {
-    const loadData = async () => {
-      setLoading(true);
-      await Promise.all([fetchMemes(), fetchCategories(), fetchFavorites()]);
-      setLoading(false);
-    };
-    loadData();
-  }, []);
-
-  useEffect(() => {
-    fetchMemes();
-  }, [fetchMemes]);
+    if (deviceId) {
+      fetchMemes();
+    }
+  }, [fetchMemes, deviceId]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -115,8 +133,9 @@ export default function MemesScreen() {
   };
 
   const toggleFavorite = async (memeId: string) => {
+    if (!deviceId) return;
     try {
-      await axios.post(`${API_URL}/api/user/${DEVICE_ID}/favorites`, {
+      await axios.post(`${API_URL}/api/user/${deviceId}/favorites`, {
         meme_id: memeId,
       });
       if (favorites.includes(memeId)) {
@@ -130,22 +149,13 @@ export default function MemesScreen() {
   };
 
   const trackUsage = async (memeId: string) => {
+    if (!deviceId) return;
     try {
-      await axios.post(`${API_URL}/api/user/${DEVICE_ID}/recent`, {
+      await axios.post(`${API_URL}/api/user/${deviceId}/recent`, {
         meme_id: memeId,
       });
     } catch (error) {
       console.error("Error tracking usage:", error);
-    }
-  };
-
-  const copyToClipboard = async (meme: Meme) => {
-    try {
-      // For images, we need to save and share
-      await shareMeme(meme);
-      trackUsage(meme.id);
-    } catch (error) {
-      Alert.alert("Error", "Failed to copy meme");
     }
   };
 
@@ -164,54 +174,55 @@ export default function MemesScreen() {
         window.alert("Meme downloaded! Share it from your downloads folder.");
         return;
       }
-      
-      // Request permissions first
-      await MediaLibrary.requestPermissionsAsync();
-      
-      // Mobile: Save to temp file in document directory
+
+      // Mobile: Create temp file and share
       const base64Data = meme.image_base64.replace(/^data:image\/\w+;base64,/, "");
-      const filename = `meme_share_${Date.now()}.png`;
+      const filename = `MemeVault_Share_${Date.now()}.png`;
       const fileUri = `${FileSystem.documentDirectory}${filename}`;
 
-      // Write file using string encoding type
+      // Write the base64 data to a file
       await FileSystem.writeAsStringAsync(fileUri, base64Data, {
-        encoding: 'base64',
+        encoding: "base64",
       });
 
-      // Share using Sharing API
-      const isAvailable = await Sharing.isAvailableAsync();
-      
-      if (isAvailable) {
+      // Verify file was created
+      const fileInfo = await FileSystem.getInfoAsync(fileUri);
+      console.log("File created:", fileInfo);
+
+      if (!fileInfo.exists) {
+        throw new Error("Failed to create file");
+      }
+
+      // Share the file
+      if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(fileUri, {
-          UTI: 'public.png',
-          mimeType: 'image/png',
+          mimeType: "image/png",
+          UTI: "public.png",
         });
       } else {
-        // Fallback to Share API for iOS
+        // Fallback
         await Share.share({
           url: fileUri,
         });
       }
-      
-      // Cleanup temp file after a delay
+
+      // Cleanup after delay
       setTimeout(async () => {
         try {
           await FileSystem.deleteAsync(fileUri, { idempotent: true });
-        } catch (e) {}
-      }, 5000);
-      
+        } catch (e) {
+          // Ignore cleanup errors
+        }
+      }, 10000);
+
     } catch (error: any) {
       console.error("Share error:", error);
-      
-      // Try alternative share method
-      try {
-        await Share.share({
-          message: "Check out this meme from MemeVault!",
-        });
-      } catch (fallbackError) {
-        if (Platform.OS !== "web") {
-          Alert.alert("Share Error", "Unable to share. Please try again.");
-        }
+      if (Platform.OS !== "web") {
+        Alert.alert(
+          "Share Error",
+          "Could not share. Please try saving the meme first.",
+          [{ text: "OK" }]
+        );
       }
     }
   };
@@ -221,7 +232,6 @@ export default function MemesScreen() {
       trackUsage(meme.id);
 
       if (Platform.OS === "web") {
-        // Web: Download the image
         const link = document.createElement("a");
         link.href = meme.image_base64;
         link.download = `MemeVault_${meme.id}.png`;
@@ -229,32 +239,36 @@ export default function MemesScreen() {
         link.click();
         document.body.removeChild(link);
         window.alert("Meme saved to your downloads!");
-      } else {
-        // Mobile: Save to camera roll
-        const { status } = await MediaLibrary.requestPermissionsAsync();
-        if (status !== "granted") {
-          Alert.alert(
-            "Permission Required",
-            "Please grant permission to save images to your photos"
-          );
-          return;
-        }
-
-        const base64Data = meme.image_base64.replace(/^data:image\/\w+;base64,/, "");
-        const fileUri = `${FileSystem.cacheDirectory}meme_${meme.id}.png`;
-
-        await FileSystem.writeAsStringAsync(fileUri, base64Data, {
-          encoding: 'base64',
-        });
-
-        await MediaLibrary.saveToLibraryAsync(fileUri);
-        Alert.alert("Saved!", "Meme saved to your photos! 📸");
+        return;
       }
+
+      // Request permissions
+      const { status } = await MediaLibrary.requestPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert(
+          "Permission Required",
+          "Please grant permission to save images to your photos"
+        );
+        return;
+      }
+
+      const base64Data = meme.image_base64.replace(/^data:image\/\w+;base64,/, "");
+      const filename = `MemeVault_${Date.now()}.png`;
+      const fileUri = `${FileSystem.documentDirectory}${filename}`;
+
+      await FileSystem.writeAsStringAsync(fileUri, base64Data, {
+        encoding: "base64",
+      });
+
+      const asset = await MediaLibrary.createAssetAsync(fileUri);
+      
+      // Cleanup temp file
+      await FileSystem.deleteAsync(fileUri, { idempotent: true });
+
+      Alert.alert("Saved!", "Meme saved to your photos! 📸");
     } catch (error) {
       console.error("Error saving:", error);
-      if (Platform.OS === "web") {
-        window.alert("Failed to save meme");
-      } else {
+      if (Platform.OS !== "web") {
         Alert.alert("Error", "Failed to save meme");
       }
     }
@@ -265,7 +279,6 @@ export default function MemesScreen() {
       await axios.delete(`${API_URL}/api/memes/${meme.id}`);
       setMemes(memes.filter((m) => m.id !== meme.id));
       setSelectedMeme(null);
-      // Simple feedback
       if (Platform.OS === "web") {
         console.log("Meme deleted successfully");
       } else {
@@ -273,9 +286,7 @@ export default function MemesScreen() {
       }
     } catch (error) {
       console.error("Error deleting:", error);
-      if (Platform.OS === "web") {
-        console.error("Failed to delete meme");
-      } else {
+      if (Platform.OS !== "web") {
         Alert.alert("Error", "Failed to delete meme");
       }
     }
