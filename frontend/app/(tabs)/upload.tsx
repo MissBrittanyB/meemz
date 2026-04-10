@@ -11,17 +11,17 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
-  Modal,
+  Switch,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
-import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import axios from "axios";
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || "";
 
-// Admin password - change this to your desired password
+// Admin password for non-logged-in admin uploads
 const ADMIN_PASSWORD = "Marchelle7!";
 
 interface Category {
@@ -32,53 +32,66 @@ interface Category {
 }
 
 export default function UploadScreen() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [token, setToken] = useState<string | null>(null);
+  
+  // Admin auth
   const [passwordInput, setPasswordInput] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [passwordError, setPasswordError] = useState(false);
   
+  // Upload form
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [memeName, setMemeName] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("");
   const [tags, setTags] = useState("");
+  const [isPublic, setIsPublic] = useState(true);
   const [categories, setCategories] = useState<Category[]>([]);
   const [uploading, setUploading] = useState(false);
 
-  // Check if already authenticated
   useEffect(() => {
     checkAuth();
+    fetchCategories();
   }, []);
 
   const checkAuth = async () => {
     try {
-      const savedAuth = await AsyncStorage.getItem("memevault_admin_auth");
-      if (savedAuth === "true") {
-        setIsAuthenticated(true);
-        fetchCategories();
+      // Check if logged in as user
+      const storedToken = await AsyncStorage.getItem("memevault_token");
+      if (storedToken) {
+        setToken(storedToken);
+        setIsLoggedIn(true);
+        return;
+      }
+      
+      // Check if admin authenticated
+      const savedAdmin = await AsyncStorage.getItem("memevault_admin_auth");
+      if (savedAdmin === "true") {
+        setIsAdmin(true);
       }
     } catch (e) {
       console.error("Error checking auth:", e);
     }
   };
 
-  const handleLogin = async () => {
+  const handleAdminLogin = async () => {
     if (passwordInput === ADMIN_PASSWORD) {
-      setIsAuthenticated(true);
+      setIsAdmin(true);
       setPasswordError(false);
       try {
         await AsyncStorage.setItem("memevault_admin_auth", "true");
       } catch (e) {
         console.error("Error saving auth:", e);
       }
-      fetchCategories();
     } else {
       setPasswordError(true);
       setPasswordInput("");
     }
   };
 
-  const handleLogout = async () => {
-    setIsAuthenticated(false);
+  const handleAdminLogout = async () => {
+    setIsAdmin(false);
     try {
       await AsyncStorage.removeItem("memevault_admin_auth");
     } catch (e) {
@@ -104,10 +117,7 @@ export default function UploadScreen() {
       if (Platform.OS === "web") {
         window.alert("Please grant permission to access your photos");
       } else {
-        Alert.alert(
-          "Permission Required",
-          "Please grant permission to access your photos"
-        );
+        Alert.alert("Permission Required", "Please grant permission to access your photos");
       }
       return;
     }
@@ -147,15 +157,6 @@ export default function UploadScreen() {
       return;
     }
 
-    if (!selectedCategory) {
-      if (Platform.OS === "web") {
-        window.alert("Please select a category");
-      } else {
-        Alert.alert("Error", "Please select a category");
-      }
-      return;
-    }
-
     setUploading(true);
 
     try {
@@ -164,30 +165,34 @@ export default function UploadScreen() {
         .map((t) => t.trim())
         .filter((t) => t.length > 0);
 
-      await axios.post(`${API_URL}/api/memes`, {
-        name: memeName.trim(),
-        image_base64: selectedImage,
-        category: selectedCategory,
-        tags: tagsArray,
-      });
+      const headers: any = { "Content-Type": "application/json" };
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+
+      await axios.post(
+        `${API_URL}/api/memes`,
+        {
+          name: memeName.trim(),
+          image_base64: selectedImage,
+          category: selectedCategory,
+          tags: tagsArray,
+          is_public: isPublic,
+        },
+        { headers }
+      );
 
       if (Platform.OS === "web") {
         window.alert("Meme uploaded successfully! 🎉");
-        setSelectedImage(null);
-        setMemeName("");
-        setTags("");
       } else {
-        Alert.alert("Success!", "Meme uploaded successfully! 🎉", [
-          {
-            text: "Upload Another",
-            onPress: () => {
-              setSelectedImage(null);
-              setMemeName("");
-              setTags("");
-            },
-          },
-        ]);
+        Alert.alert("Success!", "Meme uploaded successfully! 🎉");
       }
+      
+      // Reset form
+      setSelectedImage(null);
+      setMemeName("");
+      setTags("");
+      setIsPublic(true);
     } catch (error) {
       console.error("Error uploading meme:", error);
       if (Platform.OS === "web") {
@@ -200,19 +205,41 @@ export default function UploadScreen() {
     }
   };
 
-  // Login Screen
-  if (!isAuthenticated) {
+  // Not logged in and not admin - show login options
+  if (!isLoggedIn && !isAdmin) {
     return (
       <SafeAreaView style={styles.container} edges={["top"]}>
         <View style={styles.loginContainer}>
           <View style={styles.lockIconContainer}>
-            <Ionicons name="lock-closed" size={60} color="#FF6B35" />
+            <Ionicons name="cloud-upload" size={60} color="#FF6B35" />
           </View>
-          <Text style={styles.loginTitle}>Admin Access</Text>
+          <Text style={styles.loginTitle}>Upload Memes</Text>
           <Text style={styles.loginSubtitle}>
-            Enter password to upload memes
+            Sign in to upload memes to your profile, or use admin access for global uploads
           </Text>
 
+          <TouchableOpacity
+            style={styles.signInButton}
+            onPress={() => {
+              // Navigate to profile tab for login
+              if (Platform.OS === "web") {
+                window.alert("Go to Profile tab to sign in or create an account");
+              } else {
+                Alert.alert("Sign In", "Go to the Profile tab to sign in or create an account");
+              }
+            }}
+          >
+            <Ionicons name="person" size={24} color="#fff" />
+            <Text style={styles.signInButtonText}>Sign In / Create Account</Text>
+          </TouchableOpacity>
+
+          <View style={styles.divider}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>OR</Text>
+            <View style={styles.dividerLine} />
+          </View>
+
+          <Text style={styles.adminLabel}>Admin Access</Text>
           <View style={styles.passwordContainer}>
             <TextInput
               style={styles.passwordInput}
@@ -243,22 +270,19 @@ export default function UploadScreen() {
           )}
 
           <TouchableOpacity
-            style={[
-              styles.loginButton,
-              !passwordInput && styles.loginButtonDisabled,
-            ]}
-            onPress={handleLogin}
+            style={[styles.adminButton, !passwordInput && styles.buttonDisabled]}
+            onPress={handleAdminLogin}
             disabled={!passwordInput}
           >
-            <Ionicons name="log-in" size={24} color="#fff" />
-            <Text style={styles.loginButtonText}>Access Upload</Text>
+            <Ionicons name="key" size={20} color="#fff" />
+            <Text style={styles.adminButtonText}>Admin Access</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
     );
   }
 
-  // Upload Screen (authenticated)
+  // Upload screen (authenticated)
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       <KeyboardAvoidingView
@@ -273,14 +297,18 @@ export default function UploadScreen() {
             <View style={styles.headerRow}>
               <View>
                 <Text style={styles.title}>Upload</Text>
-                <Text style={styles.subtitle}>Add memes to your vault 📤</Text>
+                <Text style={styles.subtitle}>
+                  {isLoggedIn ? "Add memes to your profile 📤" : "Admin upload 📤"}
+                </Text>
               </View>
-              <TouchableOpacity
-                style={styles.logoutButton}
-                onPress={handleLogout}
-              >
-                <Ionicons name="log-out-outline" size={24} color="#E74C3C" />
-              </TouchableOpacity>
+              {isAdmin && !isLoggedIn && (
+                <TouchableOpacity
+                  style={styles.logoutButton}
+                  onPress={handleAdminLogout}
+                >
+                  <Ionicons name="log-out-outline" size={24} color="#E74C3C" />
+                </TouchableOpacity>
+              )}
             </View>
           </View>
 
@@ -337,8 +365,7 @@ export default function UploadScreen() {
                   key={cat.id}
                   style={[
                     styles.categoryChip,
-                    selectedCategory === cat.name &&
-                      styles.categoryChipSelected,
+                    selectedCategory === cat.name && styles.categoryChipSelected,
                   ]}
                   onPress={() => setSelectedCategory(cat.name)}
                 >
@@ -346,8 +373,7 @@ export default function UploadScreen() {
                   <Text
                     style={[
                       styles.categoryChipText,
-                      selectedCategory === cat.name &&
-                        styles.categoryChipTextSelected,
+                      selectedCategory === cat.name && styles.categoryChipTextSelected,
                     ]}
                   >
                     {cat.name}
@@ -370,12 +396,40 @@ export default function UploadScreen() {
             <Text style={styles.inputHint}>e.g. funny, relatable, mood</Text>
           </View>
 
+          {/* Public/Private Toggle */}
+          {isLoggedIn && (
+            <View style={styles.toggleContainer}>
+              <View style={styles.toggleInfo}>
+                <Ionicons 
+                  name={isPublic ? "globe" : "lock-closed"} 
+                  size={24} 
+                  color={isPublic ? "#27AE60" : "#F39C12"} 
+                />
+                <View style={styles.toggleText}>
+                  <Text style={styles.toggleLabel}>
+                    {isPublic ? "Public" : "Private"}
+                  </Text>
+                  <Text style={styles.toggleHint}>
+                    {isPublic 
+                      ? "Everyone can see this meme" 
+                      : "Only visible via your shared link"}
+                  </Text>
+                </View>
+              </View>
+              <Switch
+                value={isPublic}
+                onValueChange={setIsPublic}
+                trackColor={{ false: "#333", true: "#27AE60" }}
+                thumbColor="#fff"
+              />
+            </View>
+          )}
+
           {/* Upload Button */}
           <TouchableOpacity
             style={[
               styles.uploadButton,
-              (!selectedImage || !memeName.trim() || uploading) &&
-                styles.uploadButtonDisabled,
+              (!selectedImage || !memeName.trim() || uploading) && styles.buttonDisabled,
             ]}
             onPress={uploadMeme}
             disabled={!selectedImage || !memeName.trim() || uploading}
@@ -428,6 +482,42 @@ const styles = StyleSheet.create({
     marginBottom: 32,
     textAlign: "center",
   },
+  signInButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FF6B35",
+    width: "100%",
+    paddingVertical: 16,
+    borderRadius: 12,
+    gap: 8,
+  },
+  signInButtonText: {
+    color: "#fff",
+    fontSize: 18,
+    fontWeight: "bold",
+  },
+  divider: {
+    flexDirection: "row",
+    alignItems: "center",
+    width: "100%",
+    marginVertical: 24,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: "#333",
+  },
+  dividerText: {
+    color: "#666",
+    paddingHorizontal: 16,
+  },
+  adminLabel: {
+    color: "#888",
+    fontSize: 14,
+    marginBottom: 12,
+    alignSelf: "flex-start",
+  },
   passwordContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -453,23 +543,24 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginBottom: 16,
   },
-  loginButton: {
+  adminButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#FF6B35",
+    backgroundColor: "#333",
     width: "100%",
-    paddingVertical: 16,
+    paddingVertical: 14,
     borderRadius: 12,
     gap: 8,
   },
-  loginButtonDisabled: {
-    backgroundColor: "#333",
-  },
-  loginButtonText: {
+  adminButtonText: {
     color: "#fff",
-    fontSize: 18,
-    fontWeight: "bold",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  buttonDisabled: {
+    backgroundColor: "#333",
+    opacity: 0.6,
   },
   // Upload screen styles
   keyboardAvoid: {
@@ -593,6 +684,36 @@ const styles = StyleSheet.create({
   categoryChipTextSelected: {
     color: "#fff",
   },
+  toggleContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#1A1A1A",
+    marginHorizontal: 16,
+    marginTop: 20,
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#333",
+  },
+  toggleInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+  },
+  toggleText: {
+    marginLeft: 12,
+  },
+  toggleLabel: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  toggleHint: {
+    color: "#888",
+    fontSize: 12,
+    marginTop: 2,
+  },
   uploadButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -603,9 +724,6 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderRadius: 12,
     gap: 8,
-  },
-  uploadButtonDisabled: {
-    backgroundColor: "#333",
   },
   uploadButtonText: {
     color: "#fff",
