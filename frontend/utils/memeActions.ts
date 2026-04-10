@@ -236,6 +236,22 @@ export async function shareMemeAction(meme: MemeData): Promise<boolean> {
     const fileUri = await writeToTempFile(meme);
     const { mimeType, uti } = getMediaInfo(meme);
 
+    // For GIFs/Videos: Save to camera roll first for social media compatibility
+    // Social media apps (Instagram, Facebook, TikTok) pick animated GIFs
+    // better from the camera roll than from the share sheet
+    if (isGif(meme) || isVideo(meme)) {
+      console.log("[memeActions] GIF/Video: saving to camera roll for social media sharing");
+      try {
+        const { status } = await MediaLibrary.requestPermissionsAsync();
+        if (status === "granted") {
+          await MediaLibrary.createAssetAsync(fileUri);
+          console.log("[memeActions] Saved to camera roll for social media");
+        }
+      } catch (saveErr: any) {
+        console.log("[memeActions] Camera roll save failed (continuing with share):", saveErr?.message);
+      }
+    }
+
     console.log("[memeActions] Sharing file:", fileUri, "mimeType:", mimeType, "UTI:", uti);
 
     await Sharing.shareAsync(fileUri, {
@@ -244,8 +260,20 @@ export async function shareMemeAction(meme: MemeData): Promise<boolean> {
       UTI: uti,
     });
 
+    // Show tip for social media if it's a GIF
+    if (isGif(meme)) {
+      // Small delay so it shows after share sheet dismisses
+      setTimeout(() => {
+        Alert.alert(
+          "Tip: Posting on Social Media?",
+          "This GIF was also saved to your Photos! If the app doesn't animate it, pick the GIF directly from your camera roll when posting.",
+          [{ text: "Got it!" }]
+        );
+      }, 1000);
+    }
+
     // Delayed cleanup
-    setTimeout(() => cleanupFile(fileUri), 30000);
+    setTimeout(() => cleanupFile(fileUri), 60000);
 
     return true;
   } catch (error: any) {
