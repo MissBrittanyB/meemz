@@ -279,6 +279,17 @@ export default function PricingScreen() {
               <Text style={styles.featureText}>Ad-free experience</Text>
             </View>
           </View>
+
+          <TouchableOpacity
+            style={styles.managePlanButton}
+            onPress={() => {
+              setSubStatus(null);
+              setLoading(false);
+            }}
+          >
+            <Ionicons name="swap-horizontal" size={18} color="#FF7A1A" />
+            <Text style={styles.managePlanText}>View Plans / Change Plan</Text>
+          </TouchableOpacity>
         </ScrollView>
       </SafeAreaView>
     );
@@ -639,5 +650,23 @@ const styles = StyleSheet.create({
   featureText: {
     color: "#EAEAF0",
     fontSize: 16,
+  },
+  managePlanButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    marginTop: 32,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#FF7A1A",
+    backgroundColor: "rgba(255, 122, 26, 0.08)",
+  },
+  managePlanText: {
+    color: "#FF7A1A",
+    fontSize: 15,
+    fontWeight: "600",
   },
 });

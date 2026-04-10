@@ -21,6 +21,8 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 import { shareMemeAction, saveToDeviceAction, copyMemeAction } from "../../utils/memeActions";
 import * as ImagePicker from "expo-image-picker";
+import * as Sharing from "expo-sharing";
+import * as Clipboard from "expo-clipboard";
 import { router } from "expo-router";
 import GradientText from "../../utils/GradientText";
 import { LinearGradient } from "expo-linear-gradient";
@@ -300,6 +302,44 @@ export default function ProfileScreen() {
     if (url) Linking.openURL(url);
   };
 
+  const shareProfile = async () => {
+    if (!user) return;
+    const profileUrl = `${API_URL}/profile/${user.username}`;
+    const shareText = `Check out @${user.username} on meemz! ${profileUrl}`;
+    
+    try {
+      if (Platform.OS === "web") {
+        if (typeof navigator !== "undefined" && navigator.share) {
+          await navigator.share({ text: shareText, url: profileUrl });
+        } else {
+          await Clipboard.setStringAsync(shareText);
+          Alert.alert("Copied!", "Profile link copied to clipboard");
+        }
+        return;
+      }
+      
+      // Native: copy to clipboard and show share sheet
+      await Clipboard.setStringAsync(shareText);
+      
+      const isAvailable = await Sharing.isAvailableAsync();
+      if (isAvailable) {
+        // Create a temp text file with the link so native share works
+        const FileSystem = require("expo-file-system");
+        const tempFile = `${FileSystem.cacheDirectory}meemz_profile_${Date.now()}.txt`;
+        await FileSystem.writeAsStringAsync(tempFile, shareText);
+        await Sharing.shareAsync(tempFile, {
+          mimeType: "text/plain",
+          dialogTitle: `Share @${user.username}'s Profile`,
+        });
+      } else {
+        Alert.alert("Link Copied!", `Profile link for @${user.username} has been copied to your clipboard.`);
+      }
+    } catch (err) {
+      // If share was cancelled, still show clipboard confirmation
+      Alert.alert("Link Copied!", `Profile link for @${user.username} has been copied to your clipboard.`);
+    }
+  };
+
   if (isLoading) {
     return (
       <SafeAreaView style={styles.container} edges={["top"]}>
@@ -539,6 +579,13 @@ export default function ProfileScreen() {
           {/* Action Buttons */}
           {!isEditing ? (
             <View style={styles.actionRow}>
+              <TouchableOpacity
+                style={styles.shareProfileButton}
+                onPress={shareProfile}
+              >
+                <Ionicons name="link-outline" size={18} color="#FF7A1A" />
+                <Text style={styles.shareProfileText}>Share Profile</Text>
+              </TouchableOpacity>
               <TouchableOpacity
                 style={styles.editButton}
                 onPress={startEditing}
@@ -1010,6 +1057,22 @@ const styles = StyleSheet.create({
   editButtonText: {
     color: "#fff",
     fontWeight: "600",
+  },
+  shareProfileButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255, 122, 26, 0.1)",
+    borderWidth: 1,
+    borderColor: "#FF7A1A",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 8,
+    gap: 6,
+  },
+  shareProfileText: {
+    color: "#FF7A1A",
+    fontWeight: "600",
+    fontSize: 14,
   },
   logoutButton: {
     backgroundColor: "rgba(231, 76, 60, 0.1)",
