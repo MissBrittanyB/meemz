@@ -138,39 +138,37 @@ export async function copyMemeAction(meme: MemeData): Promise<boolean> {
     }
 
     // --- NATIVE: GIFs and Videos ---
-    // Clipboard.setImageAsync doesn't support animated GIFs or videos.
-    // For GIFs/videos, we use the share sheet so the user can send it directly.
+    // Clipboard doesn't support animated GIFs, use share sheet instead
     if (isGif(meme) || isVideo(meme)) {
-      console.log("[memeActions] GIF/Video detected - using share sheet for copy");
+      console.log("[memeActions] GIF/Video - using share sheet for copy");
       const fileUri = await writeToTempFile(meme);
       const isAvailable = await Sharing.isAvailableAsync();
 
       if (isAvailable) {
         const { mimeType, uti } = getMediaInfo(meme);
-        Alert.alert(
-          "Copy GIF",
-          "GIFs can't be copied to clipboard directly. Use the share sheet to send it!",
-        );
         await Sharing.shareAsync(fileUri, {
           mimeType,
-          dialogTitle: "Share this Meemz GIF",
+          dialogTitle: "Share this Meemz",
           UTI: uti,
         });
         setTimeout(() => cleanupFile(fileUri), 30000);
         return true;
       }
-
-      Alert.alert("Copy Issue", "Could not copy GIF. Try using Share instead.");
       return false;
     }
 
     // --- NATIVE: Static Images ---
-    const rawBase64 = extractBase64(meme.image_base64);
-    console.log("[memeActions] Attempting Clipboard.setImageAsync, base64 length:", rawBase64.length);
+    // IMPORTANT: setImageAsync requires FULL data URI with prefix
+    let imageDataUri = meme.image_base64;
+    if (!imageDataUri.startsWith("data:")) {
+      imageDataUri = `data:image/png;base64,${imageDataUri}`;
+    }
+
+    console.log("[memeActions] Clipboard.setImageAsync with data URI, length:", imageDataUri.length);
 
     try {
-      await Clipboard.setImageAsync(rawBase64);
-      Alert.alert("Copied!", "Meemz copied to clipboard! Paste it anywhere.");
+      await Clipboard.setImageAsync(imageDataUri);
+      Alert.alert("Copied!", "Meemz copied to clipboard! Paste it in Messages, Notes, or any app that supports image paste.");
       return true;
     } catch (clipErr: any) {
       console.log("[memeActions] setImageAsync failed:", clipErr?.message || clipErr);
@@ -236,22 +234,6 @@ export async function shareMemeAction(meme: MemeData): Promise<boolean> {
     const fileUri = await writeToTempFile(meme);
     const { mimeType, uti } = getMediaInfo(meme);
 
-    // For GIFs/Videos: Save to camera roll first for social media compatibility
-    // Social media apps (Instagram, Facebook, TikTok) pick animated GIFs
-    // better from the camera roll than from the share sheet
-    if (isGif(meme) || isVideo(meme)) {
-      console.log("[memeActions] GIF/Video: saving to camera roll for social media sharing");
-      try {
-        const { status } = await MediaLibrary.requestPermissionsAsync();
-        if (status === "granted") {
-          await MediaLibrary.createAssetAsync(fileUri);
-          console.log("[memeActions] Saved to camera roll for social media");
-        }
-      } catch (saveErr: any) {
-        console.log("[memeActions] Camera roll save failed (continuing with share):", saveErr?.message);
-      }
-    }
-
     console.log("[memeActions] Sharing file:", fileUri, "mimeType:", mimeType, "UTI:", uti);
 
     await Sharing.shareAsync(fileUri, {
@@ -259,18 +241,6 @@ export async function shareMemeAction(meme: MemeData): Promise<boolean> {
       dialogTitle: "Share Meemz",
       UTI: uti,
     });
-
-    // Show tip for social media if it's a GIF
-    if (isGif(meme)) {
-      // Small delay so it shows after share sheet dismisses
-      setTimeout(() => {
-        Alert.alert(
-          "Tip: Posting on Social Media?",
-          "This GIF was also saved to your Photos! If the app doesn't animate it, pick the GIF directly from your camera roll when posting.",
-          [{ text: "Got it!" }]
-        );
-      }, 1000);
-    }
 
     // Delayed cleanup
     setTimeout(() => cleanupFile(fileUri), 60000);
