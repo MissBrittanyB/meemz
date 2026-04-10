@@ -36,7 +36,7 @@ async def import_all_memes():
     image_extensions = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
     
     images = []
-    for folder in ["folder1", "folder2", "folder3"]:
+    for folder in ["folder6", "folder7", "folder8"]:
         folder_path = import_dir / folder
         if folder_path.exists():
             for f in folder_path.iterdir():
