@@ -165,43 +165,61 @@ export default function MemesScreen() {
         return;
       }
       
-      // Mobile: First save to a temp file, then share
-      const base64Data = meme.image_base64.replace(/^data:image\/\w+;base64,/, "");
-      const filename = `MemeVault_${Date.now()}.png`;
-      const fileUri = FileSystem.documentDirectory + filename;
-
-      console.log("Writing file to:", fileUri);
+      // Request permissions first
+      const { status } = await MediaLibrary.requestPermissionsAsync();
       
+      // Mobile: Save to temp file in document directory
+      const base64Data = meme.image_base64.replace(/^data:image\/\w+;base64,/, "");
+      const filename = `meme_share_${Date.now()}.png`;
+      const fileUri = `${FileSystem.documentDirectory}${filename}`;
+
+      // Write file
       await FileSystem.writeAsStringAsync(fileUri, base64Data, {
         encoding: FileSystem.EncodingType.Base64,
       });
 
-      console.log("File written, now sharing...");
+      // Verify file exists
+      const fileInfo = await FileSystem.getInfoAsync(fileUri);
       
-      // Use Sharing
-      await Sharing.shareAsync(fileUri);
-      
-      // Clean up temp file after sharing
-      try {
-        await FileSystem.deleteAsync(fileUri, { idempotent: true });
-      } catch (e) {
-        // Ignore cleanup errors
+      if (!fileInfo.exists) {
+        throw new Error("Could not create temp file");
       }
-    } catch (error: any) {
-      console.error("Share error details:", error.message || error);
+
+      // Share using Sharing API
+      const isAvailable = await Sharing.isAvailableAsync();
       
-      if (Platform.OS !== "web") {
-        Alert.alert(
-          "Share",
-          "Opening save dialog instead. Save the meme, then share from Photos.",
-          [
-            { 
-              text: "Save Now", 
-              onPress: () => saveToDevice(meme)
-            },
-            { text: "Cancel", style: "cancel" }
-          ]
-        );
+      if (isAvailable) {
+        await Sharing.shareAsync(fileUri, {
+          UTI: 'public.png',
+          mimeType: 'image/png',
+        });
+      } else {
+        // Fallback to Share API for iOS
+        await Share.share({
+          url: fileUri,
+        });
+      }
+      
+      // Cleanup temp file
+      setTimeout(async () => {
+        try {
+          await FileSystem.deleteAsync(fileUri, { idempotent: true });
+        } catch (e) {}
+      }, 5000);
+      
+    } catch (error: any) {
+      console.error("Share error:", error);
+      
+      // Try alternative share method
+      try {
+        await Share.share({
+          message: "Check out this meme from MemeVault!",
+          url: meme.image_base64,
+        });
+      } catch (fallbackError) {
+        if (Platform.OS !== "web") {
+          Alert.alert("Share Error", "Unable to share directly. Please try again.");
+        }
       }
     }
   };
