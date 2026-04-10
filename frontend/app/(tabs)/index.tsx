@@ -38,6 +38,9 @@ interface Meme {
   tags: string[];
   use_count: number;
   created_at: string;
+  media_type?: string;
+  username?: string;
+  user_id?: string;
 }
 
 interface Category {
@@ -269,24 +272,32 @@ export default function MemesScreen() {
     }
   };
 
-  const renderMemeItem = ({ item }: { item: Meme }) => (
-    <TouchableOpacity
-      style={styles.memeItem}
-      onPress={() => setSelectedMeme(item)}
-      activeOpacity={0.8}
-    >
-      <Image
-        source={{ uri: item.image_base64 }}
-        style={styles.memeImage}
-        resizeMode="cover"
-      />
-      {favorites.includes(item.id) && (
-        <View style={styles.favoriteIndicator}>
-          <Ionicons name="heart" size={14} color="#FF7A1A" />
-        </View>
-      )}
-    </TouchableOpacity>
-  );
+  const renderMemeItem = ({ item }: { item: Meme }) => {
+    const itemIsGif = item.media_type === "gif" || item.image_base64?.startsWith("data:image/gif");
+    return (
+      <TouchableOpacity
+        style={styles.memeItem}
+        onPress={() => setSelectedMeme(item)}
+        activeOpacity={0.8}
+      >
+        <Image
+          source={{ uri: item.image_base64 }}
+          style={styles.memeImage}
+          resizeMode="cover"
+        />
+        {itemIsGif && (
+          <View style={styles.gifBadge}>
+            <Text style={styles.gifBadgeText}>GIF</Text>
+          </View>
+        )}
+        {favorites.includes(item.id) && (
+          <View style={styles.favoriteIndicator}>
+            <Ionicons name="heart" size={14} color="#FF7A1A" />
+          </View>
+        )}
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
@@ -645,6 +656,21 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.6)",
     borderRadius: 10,
     padding: 4,
+  },
+  gifBadge: {
+    position: "absolute",
+    bottom: 4,
+    left: 4,
+    backgroundColor: "rgba(255, 122, 26, 0.85)",
+    borderRadius: 4,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+  },
+  gifBadgeText: {
+    color: "#fff",
+    fontSize: 9,
+    fontWeight: "800",
+    letterSpacing: 0.5,
   },
   modalOverlay: {
     flex: 1,

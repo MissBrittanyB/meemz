@@ -51,6 +51,7 @@ interface Meme {
   image_base64: string;
   category: string;
   is_public: boolean;
+  media_type?: string;
 }
 
 export default function ProfileScreen() {

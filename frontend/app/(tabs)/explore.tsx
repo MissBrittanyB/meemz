@@ -32,6 +32,7 @@ interface Meme {
   user_id?: string;
   is_public: boolean;
   username?: string;
+  media_type?: string;
 }
 
 export default function ExploreScreen() {

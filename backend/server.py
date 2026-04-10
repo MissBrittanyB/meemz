@@ -474,6 +474,11 @@ async def get_meme_as_video(meme_id: str):
     if not image_data:
         raise HTTPException(status_code=404, detail="No media data")
 
+    # Auto-detect if this is actually a GIF from data URI
+    is_gif_data = image_data.startswith("data:image/gif") or meme.get("media_type") == "gif"
+    if not is_gif_data:
+        raise HTTPException(status_code=400, detail="Meme is not a GIF")
+
     if "," in image_data:
         raw_b64 = image_data.split(",", 1)[1]
     else:
@@ -485,6 +490,11 @@ async def get_meme_as_video(meme_id: str):
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid base64 data")
 
+    # Verify it's actually a GIF file (magic bytes: GIF87a or GIF89a)
+    if not gif_bytes[:3] == b'GIF':
+        logger.warning(f"Meme {meme_id} has gif media_type but data is not GIF format")
+        raise HTTPException(status_code=400, detail="Data is not a valid GIF file")
+
     with tempfile.NamedTemporaryFile(suffix=".gif", delete=False) as gif_file:
         gif_file.write(gif_bytes)
         gif_path = gif_file.name
@@ -492,15 +502,23 @@ async def get_meme_as_video(meme_id: str):
     mp4_path = gif_path.replace(".gif", ".mp4")
 
     try:
+        # Use ffmpeg to convert GIF to MP4 with social media compatible settings
+        # -stream_loop 2: Loop the GIF 3x total for very short GIFs
+        # -movflags faststart: Optimize for web/social streaming
+        # -pix_fmt yuv420p: Required for broad compatibility
+        # -vf scale: Ensure even dimensions (required by H.264)
+        # -t 15: Cap at 15 seconds to avoid huge files
         result = subprocess.run([
             "ffmpeg", "-y",
+            "-ignore_loop", "0",
             "-i", gif_path,
             "-movflags", "faststart",
             "-pix_fmt", "yuv420p",
-            "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+            "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2:flags=lanczos,fps=15",
             "-c:v", "libx264",
             "-preset", "fast",
-            "-crf", "23",
+            "-crf", "20",
+            "-t", "15",
             "-an",
             mp4_path,
         ], capture_output=True, text=True, timeout=30)
@@ -511,6 +529,9 @@ async def get_meme_as_video(meme_id: str):
 
         with open(mp4_path, "rb") as f:
             mp4_bytes = f.read()
+
+        if len(mp4_bytes) < 100:
+            raise HTTPException(status_code=500, detail="Generated MP4 is too small/invalid")
 
         mp4_b64 = b64_mod.b64encode(mp4_bytes).decode("utf-8")
         mp4_data_uri = f"data:video/mp4;base64,{mp4_b64}"
@@ -568,6 +589,15 @@ async def get_meme(meme_id: str):
 async def create_meme(meme: MemeCreate, current_user: dict = Depends(get_current_user)):
     """Create a new meme"""
     meme_obj = Meme(**meme.dict())
+    
+    # Auto-detect media_type from data URI prefix if not explicitly set or mismatch
+    image_data = meme_obj.image_base64 or ""
+    if image_data.startswith("data:image/gif"):
+        meme_obj.media_type = "gif"
+        logger.info(f"Auto-detected GIF from data URI for meme: {meme_obj.name}")
+    elif image_data.startswith("data:video/"):
+        meme_obj.media_type = "video"
+        logger.info(f"Auto-detected video from data URI for meme: {meme_obj.name}")
     
     # If user is logged in, associate meme with user
     if current_user:

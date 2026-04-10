@@ -140,34 +140,41 @@ export default function UploadScreen() {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ["images", "videos"],
       allowsEditing: false,
-      quality: 0.8,
-      base64: true,
+      quality: 1,
+      base64: false,
       videoMaxDuration: 60,
     });
 
     if (!result.canceled && result.assets[0]) {
       const asset = result.assets[0];
       const mimeType = asset.mimeType || "image/jpeg";
+      const uri = asset.uri || "";
       
-      // Detect media type
-      if (asset.type === "video" || mimeType.startsWith("video/")) {
+      // Detect media type from MIME and file extension
+      const isGifFile = mimeType === "image/gif" || uri.toLowerCase().endsWith(".gif");
+      const isVideoFile = asset.type === "video" || mimeType.startsWith("video/");
+      
+      if (isVideoFile) {
         setMediaType("video");
-      } else if (mimeType === "image/gif") {
+      } else if (isGifFile) {
         setMediaType("gif");
       } else {
         setMediaType("image");
       }
 
-      if (asset.base64) {
-        setSelectedImage(`data:${mimeType};base64,${asset.base64}`);
-      } else if (asset.uri) {
-        // For videos, read file to base64
+      console.log("[Upload] Picked:", { mimeType, isGifFile, isVideoFile, uri: uri.substring(0, 80) });
+
+      // ALWAYS read from file URI to preserve original format (especially GIF animation)
+      // ImagePicker's base64 output with quality compression strips GIF animation frames
+      if (asset.uri) {
         try {
           const FS = await getFileSystem();
           const fileData = await FS.readAsStringAsync(asset.uri, {
             encoding: FS.EncodingType.Base64,
           });
-          setSelectedImage(`data:${mimeType};base64,${fileData}`);
+          const actualMime = isGifFile ? "image/gif" : mimeType;
+          setSelectedImage(`data:${actualMime};base64,${fileData}`);
+          console.log("[Upload] File read from URI, mime:", actualMime, "size:", fileData.length);
         } catch (e) {
           console.error("Error reading file:", e);
           // Fallback: use URI directly

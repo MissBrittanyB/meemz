@@ -203,7 +203,9 @@ export async function copyMemeAction(meme: MemeData): Promise<boolean> {
 // SHARE
 // ============================================================
 export async function shareMemeAction(meme: MemeData): Promise<boolean> {
-  console.log("[memeActions] shareMemeAction called for:", meme.name, "isGif:", isGif(meme));
+  const memeIsGif = isGif(meme);
+  const memeIsVideo = isVideo(meme);
+  console.log("[memeActions] shareMemeAction called for:", meme.name, "isGif:", memeIsGif, "isVideo:", memeIsVideo, "media_type:", meme.media_type);
 
   try {
     // --- WEB ---
@@ -232,53 +234,118 @@ export async function shareMemeAction(meme: MemeData): Promise<boolean> {
     }
 
     // For GIFs: Convert to MP4 video for social media compatibility
-    if (isGif(meme)) {
-      console.log("[memeActions] GIF detected - converting to MP4 for social media");
-      try {
-        const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || "";
-        const response = await fetch(`${API_URL}/api/memes/${meme.id}/video`);
-        
-        if (response.ok) {
-          const videoData = await response.json();
-          if (videoData.video_base64) {
-            // Create a temporary meme object with the MP4 data
-            const mp4Meme: MemeData = {
-              ...meme,
-              image_base64: videoData.video_base64,
-              media_type: "video",
-            };
-            const fileUri = await writeToTempFile(mp4Meme);
-            console.log("[memeActions] Sharing MP4 video:", fileUri);
-
-            await Sharing.shareAsync(fileUri, {
-              mimeType: "video/mp4",
-              dialogTitle: "Share Meemz",
-              UTI: "public.mpeg-4",
-            });
-
-            setTimeout(() => cleanupFile(fileUri), 60000);
-
-            // Tip for social media
-            setTimeout(() => {
-              Alert.alert(
-                "Shared as Video!",
-                "Your GIF was converted to video for best social media compatibility. It will play animated on Instagram, Twitter, Facebook and more!",
-                [{ text: "Got it!" }]
-              );
-            }, 1000);
-
-            return true;
+    // Instagram, Facebook, Twitter etc. don't animate GIFs from the iOS share sheet
+    if (memeIsGif) {
+      console.log("[memeActions] GIF detected - attempting MP4 conversion for social media");
+      
+      const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || "";
+      console.log("[memeActions] API_URL:", API_URL);
+      
+      // Try converting GIF to MP4 with retries
+      let mp4Success = false;
+      let lastError = "";
+      
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          console.log(`[memeActions] MP4 conversion attempt ${attempt}/3`);
+          const videoUrl = `${API_URL}/api/memes/${meme.id}/video`;
+          console.log("[memeActions] Fetching:", videoUrl);
+          
+          const response = await fetch(videoUrl, {
+            method: "GET",
+            headers: { "Accept": "application/json" },
+          });
+          
+          console.log("[memeActions] Response status:", response.status);
+          
+          if (response.ok) {
+            const videoData = await response.json();
+            console.log("[memeActions] Video data received, size:", videoData.size);
+            
+            if (videoData.video_base64) {
+              // Write MP4 to temp file
+              const rawMp4Base64 = extractBase64(videoData.video_base64);
+              if (!FileSystem.cacheDirectory) {
+                throw new Error("Cache directory not available");
+              }
+              
+              const mp4Filename = `meemz_${meme.id}_${Date.now()}.mp4`;
+              const mp4FileUri = FileSystem.cacheDirectory + mp4Filename;
+              
+              console.log("[memeActions] Writing MP4 to:", mp4FileUri, "base64 length:", rawMp4Base64.length);
+              
+              await FileSystem.writeAsStringAsync(mp4FileUri, rawMp4Base64, {
+                encoding: FileSystem.EncodingType.Base64,
+              });
+              
+              const fileInfo = await FileSystem.getInfoAsync(mp4FileUri);
+              console.log("[memeActions] MP4 file exists:", fileInfo.exists, "size:", (fileInfo as any).size);
+              
+              if (!fileInfo.exists || (fileInfo as any).size < 100) {
+                throw new Error("MP4 file write failed or too small");
+              }
+              
+              // Share the MP4 video
+              await Sharing.shareAsync(mp4FileUri, {
+                mimeType: "video/mp4",
+                dialogTitle: "Share Meemz",
+                UTI: "public.mpeg-4",
+              });
+              
+              // Cleanup after delay
+              setTimeout(() => cleanupFile(mp4FileUri), 60000);
+              
+              mp4Success = true;
+              console.log("[memeActions] MP4 shared successfully!");
+              break; // Exit retry loop
+            }
+          } else {
+            const errText = await response.text().catch(() => "");
+            lastError = `HTTP ${response.status}: ${errText}`;
+            console.log("[memeActions] API error:", lastError);
           }
+        } catch (err: any) {
+          lastError = err?.message || "Unknown error";
+          console.log(`[memeActions] Attempt ${attempt} failed:`, lastError);
         }
-      } catch (convertErr: any) {
-        console.log("[memeActions] MP4 conversion failed, falling back to GIF:", convertErr?.message);
+        
+        // Wait before retry
+        if (attempt < 3) {
+          console.log("[memeActions] Waiting 1s before retry...");
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
       }
-
-      // Fallback: share as GIF if conversion fails
-      console.log("[memeActions] Falling back to GIF share");
+      
+      if (mp4Success) {
+        return true;
+      }
+      
+      // MP4 conversion failed after retries - share as GIF with warning
+      console.log("[memeActions] MP4 conversion failed after 3 attempts, sharing as GIF with warning");
+      console.log("[memeActions] Last error:", lastError);
+      
+      // Share as GIF anyway but warn user
+      const fileUri = await writeToTempFile(meme);
+      await Sharing.shareAsync(fileUri, {
+        mimeType: "image/gif",
+        dialogTitle: "Share Meemz",
+        UTI: "com.compuserve.gif",
+      });
+      setTimeout(() => cleanupFile(fileUri), 60000);
+      
+      // Warn user about animation limitation
+      setTimeout(() => {
+        Alert.alert(
+          "Heads Up",
+          "The GIF was shared but may appear as a still image on some social media apps (Instagram, Facebook). For best results, save the meme first, then share directly from your Photos app.",
+          [{ text: "Got it" }]
+        );
+      }, 1000);
+      
+      return true;
     }
 
-    // Standard share (images + fallback for GIFs)
+    // Standard share (static images + videos)
     const fileUri = await writeToTempFile(meme);
     const { mimeType, uti } = getMediaInfo(meme);
 
