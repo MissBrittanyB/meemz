@@ -341,7 +341,7 @@ async def delete_category(category_id: str):
 async def get_memes(
     search: Optional[str] = None,
     category: Optional[str] = None,
-    limit: int = 500,
+    limit: int = 20,
     skip: int = 0,
     public_only: bool = True
 ):
@@ -375,7 +375,7 @@ async def get_memes(
     return result
 
 @api_router.get("/memes/explore")
-async def explore_memes(limit: int = 50):
+async def explore_memes(limit: int = 20):
     """Get random public memes for discovery"""
     pipeline = [
         {"$match": {"is_public": True}},

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   View,
   Text,
@@ -49,6 +49,8 @@ export default function MemesScreen() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedMeme, setSelectedMeme] = useState<Meme | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [favorites, setFavorites] = useState<string[]>([]);
 
@@ -71,16 +73,43 @@ export default function MemesScreen() {
     initDeviceId();
   }, []);
 
-  const fetchMemes = useCallback(async () => {
+  const PAGE_SIZE = 20;
+  const skipRef = useRef(0);
+
+  const fetchMemes = useCallback(async (reset = true) => {
     try {
-      const params: any = {};
+      if (reset) {
+        setLoading(true);
+        setHasMore(true);
+        skipRef.current = 0;
+      } else {
+        if (!hasMore || loadingMore) return;
+        setLoadingMore(true);
+      }
+
+      const params: any = { limit: PAGE_SIZE, skip: skipRef.current };
       if (searchQuery) params.search = searchQuery;
       if (selectedCategory !== "All") params.category = selectedCategory;
 
       const response = await axios.get(`${API_URL}/api/memes`, { params });
-      setMemes(response.data);
+      const newMemes = response.data;
+
+      if (newMemes.length < PAGE_SIZE) {
+        setHasMore(false);
+      }
+
+      if (reset) {
+        setMemes(newMemes);
+        skipRef.current = newMemes.length;
+      } else {
+        setMemes((prev) => [...prev, ...newMemes]);
+        skipRef.current += newMemes.length;
+      }
     } catch (error) {
       console.error("Error fetching memes:", error);
+    } finally {
+      setLoading(false);
+      setLoadingMore(false);
     }
   }, [searchQuery, selectedCategory]);
 
@@ -125,8 +154,14 @@ export default function MemesScreen() {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([fetchMemes(), fetchCategories(), fetchFavorites()]);
+    await Promise.all([fetchMemes(true), fetchCategories(), fetchFavorites()]);
     setRefreshing(false);
+  };
+
+  const loadMoreMemes = () => {
+    if (hasMore && !loadingMore) {
+      fetchMemes(false);
+    }
   };
 
   const toggleFavorite = async (memeId: string) => {
@@ -289,6 +324,15 @@ export default function MemesScreen() {
           numColumns={3}
           contentContainerStyle={styles.memesGrid}
           showsVerticalScrollIndicator={false}
+          onEndReached={loadMoreMemes}
+          onEndReachedThreshold={0.5}
+          ListFooterComponent={
+            loadingMore ? (
+              <View style={{ paddingVertical: 20, alignItems: "center" }}>
+                <ActivityIndicator size="small" color="#FF7A1A" />
+              </View>
+            ) : null
+          }
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
