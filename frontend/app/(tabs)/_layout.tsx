@@ -27,7 +27,6 @@ export default function TabLayout() {
         name="categories"
         options={{
           title: "Categories",
-          href: null,
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="grid" size={size} color={color} />
           ),
