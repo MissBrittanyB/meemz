@@ -8,19 +8,14 @@ import {
   Image,
   Modal,
   ActivityIndicator,
-  Alert,
-  Share,
   Dimensions,
   RefreshControl,
-  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import * as FileSystem from "expo-file-system/legacy";
-import * as MediaLibrary from "expo-media-library";
-import * as Sharing from "expo-sharing";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
+import { shareMemeAction, saveToDeviceAction } from "../../utils/memeActions";
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || "";
 const { width } = Dimensions.get("window");
@@ -127,91 +122,13 @@ export default function RecentScreen() {
   };
 
   const shareMeme = async (meme: Meme) => {
-    try {
-      trackUsage(meme.id);
-
-      // Check if native mobile
-      const isNativeMobile = Platform.OS === "ios" || Platform.OS === "android";
-      
-      if (!isNativeMobile) {
-        const link = document.createElement("a");
-        link.href = meme.image_base64;
-        link.download = `MemeVault_${meme.id}.png`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        window.alert("Meme downloaded!");
-        return;
-      }
-
-      // Native mobile: open share sheet
-      const base64Data = meme.image_base64.replace(/^data:image\/\w+;base64,/, "");
-      const filename = `MemeVault_${Date.now()}.png`;
-      const fileUri = `${FileSystem.documentDirectory}${filename}`;
-
-      await FileSystem.writeAsStringAsync(fileUri, base64Data, {
-        encoding: "base64",
-      });
-
-      await Sharing.shareAsync(fileUri, {
-        mimeType: "image/png",
-        UTI: "public.png",
-        dialogTitle: "Share Meme",
-      });
-
-      setTimeout(async () => {
-        try {
-          await FileSystem.deleteAsync(fileUri, { idempotent: true });
-        } catch (e) {}
-      }, 15000);
-
-    } catch (error) {
-      console.error("Error sharing:", error);
-      if (Platform.OS !== "web") {
-        Alert.alert("Error", "Failed to share meme");
-      }
-    }
+    trackUsage(meme.id);
+    await shareMemeAction(meme);
   };
 
   const saveToDevice = async (meme: Meme) => {
-    try {
-      trackUsage(meme.id);
-
-      if (Platform.OS === "web") {
-        const link = document.createElement("a");
-        link.href = meme.image_base64;
-        link.download = `MemeVault_${meme.id}.png`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        window.alert("Meme saved!");
-        return;
-      }
-
-      const { status } = await MediaLibrary.requestPermissionsAsync();
-      if (status !== "granted") {
-        Alert.alert("Permission Required", "Please grant permission to save images");
-        return;
-      }
-
-      const base64Data = meme.image_base64.replace(/^data:image\/\w+;base64,/, "");
-      const filename = `MemeVault_${Date.now()}.png`;
-      const fileUri = `${FileSystem.documentDirectory}${filename}`;
-
-      await FileSystem.writeAsStringAsync(fileUri, base64Data, {
-        encoding: "base64",
-      });
-
-      await MediaLibrary.createAssetAsync(fileUri);
-      await FileSystem.deleteAsync(fileUri, { idempotent: true });
-
-      Alert.alert("Saved!", "Meme saved to your photos! 📸");
-    } catch (error) {
-      console.error("Error saving:", error);
-      if (Platform.OS !== "web") {
-        Alert.alert("Error", "Failed to save meme");
-      }
-    }
+    trackUsage(meme.id);
+    await saveToDeviceAction(meme);
   };
 
   const renderMemeItem = ({ item }: { item: Meme }) => (

@@ -356,6 +356,95 @@ class MemeVaultTester:
             self.log_test("Get Stats", False, f"Exception: {str(e)}")
             return False
     
+    def test_explore_memes_default(self):
+        """Test 13: GET /api/memes/explore - Get random public memes (default limit)"""
+        try:
+            response = self.session.get(f"{self.base_url}/memes/explore")
+            
+            if response.status_code == 200:
+                data = response.json()
+                if isinstance(data, list):
+                    # Check response format for each meme
+                    if len(data) > 0:
+                        meme = data[0]
+                        required_fields = ["id", "name", "image_base64", "category", "tags", "use_count", "created_at", "is_public", "username"]
+                        has_all_fields = all(field in meme for field in required_fields)
+                        
+                        if has_all_fields:
+                            # Verify all memes are public
+                            all_public = all(meme.get("is_public", False) for meme in data)
+                            if all_public:
+                                self.log_test("Explore Memes (Default)", True, f"Found {len(data)} random public memes with all required fields")
+                                return True
+                            else:
+                                non_public_count = sum(1 for meme in data if not meme.get("is_public", False))
+                                self.log_test("Explore Memes (Default)", False, f"{non_public_count} non-public memes returned", data)
+                                return False
+                        else:
+                            missing_fields = [field for field in required_fields if field not in meme]
+                            self.log_test("Explore Memes (Default)", False, f"Missing fields: {missing_fields}", meme)
+                            return False
+                    else:
+                        self.log_test("Explore Memes (Default)", True, "No memes found (empty array)")
+                        return True
+                else:
+                    self.log_test("Explore Memes (Default)", False, "Response is not an array", data)
+                    return False
+            else:
+                self.log_test("Explore Memes (Default)", False, f"Status: {response.status_code}", response.text)
+                return False
+                
+        except Exception as e:
+            self.log_test("Explore Memes (Default)", False, f"Exception: {str(e)}")
+            return False
+    
+    def test_explore_memes_custom_limit(self):
+        """Test 14: GET /api/memes/explore?limit=5 - Get random public memes with custom limit"""
+        try:
+            response = self.session.get(f"{self.base_url}/memes/explore?limit=5")
+            
+            if response.status_code == 200:
+                data = response.json()
+                if isinstance(data, list):
+                    # Check that we get at most 5 memes
+                    if len(data) <= 5:
+                        # Check response format for each meme
+                        if len(data) > 0:
+                            meme = data[0]
+                            required_fields = ["id", "name", "image_base64", "category", "tags", "use_count", "created_at", "is_public", "username"]
+                            has_all_fields = all(field in meme for field in required_fields)
+                            
+                            if has_all_fields:
+                                # Verify all memes are public
+                                all_public = all(meme.get("is_public", False) for meme in data)
+                                if all_public:
+                                    self.log_test("Explore Memes (Custom Limit)", True, f"Found {len(data)} random public memes (limit=5) with all required fields")
+                                    return True
+                                else:
+                                    non_public_count = sum(1 for meme in data if not meme.get("is_public", False))
+                                    self.log_test("Explore Memes (Custom Limit)", False, f"{non_public_count} non-public memes returned", data)
+                                    return False
+                            else:
+                                missing_fields = [field for field in required_fields if field not in meme]
+                                self.log_test("Explore Memes (Custom Limit)", False, f"Missing fields: {missing_fields}", meme)
+                                return False
+                        else:
+                            self.log_test("Explore Memes (Custom Limit)", True, "No memes found (empty array)")
+                            return True
+                    else:
+                        self.log_test("Explore Memes (Custom Limit)", False, f"Returned {len(data)} memes, expected max 5", data)
+                        return False
+                else:
+                    self.log_test("Explore Memes (Custom Limit)", False, "Response is not an array", data)
+                    return False
+            else:
+                self.log_test("Explore Memes (Custom Limit)", False, f"Status: {response.status_code}", response.text)
+                return False
+                
+        except Exception as e:
+            self.log_test("Explore Memes (Custom Limit)", False, f"Exception: {str(e)}")
+            return False
+    
     def run_all_tests(self):
         """Run all tests in sequence"""
         print(f"🚀 Starting MemeVault API Tests")
@@ -374,7 +463,9 @@ class MemeVaultTester:
             self.test_add_to_recent,
             self.test_get_recent,
             self.test_delete_meme,
-            self.test_get_stats
+            self.test_get_stats,
+            self.test_explore_memes_default,
+            self.test_explore_memes_custom_limit
         ]
         
         passed = 0

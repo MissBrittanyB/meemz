@@ -10,18 +10,14 @@ import {
   Modal,
   ActivityIndicator,
   Alert,
-  Share,
-  Platform,
   Dimensions,
   RefreshControl,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import * as FileSystem from "expo-file-system/legacy";
-import * as MediaLibrary from "expo-media-library";
-import * as Sharing from "expo-sharing";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
+import { shareMemeAction, saveToDeviceAction } from "../../utils/memeActions";
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || "";
 const { width } = Dimensions.get("window");
@@ -160,99 +156,13 @@ export default function MemesScreen() {
   };
 
   const shareMeme = async (meme: Meme) => {
-    try {
-      trackUsage(meme.id);
-
-      // Check if we're on native mobile (iOS/Android)
-      const isNativeMobile = Platform.OS === "ios" || Platform.OS === "android";
-      
-      if (!isNativeMobile) {
-        // Web browser: Download the meme
-        const link = document.createElement("a");
-        link.href = meme.image_base64;
-        link.download = `MemeVault_${meme.id}.png`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        window.alert("Meme downloaded! Share it from your downloads folder.");
-        return;
-      }
-
-      // Native Mobile (iOS/Android): Create temp file and open native share sheet
-      const base64Data = meme.image_base64.replace(/^data:image\/\w+;base64,/, "");
-      const filename = `MemeVault_${Date.now()}.png`;
-      const fileUri = `${FileSystem.documentDirectory}${filename}`;
-
-      // Write the image to a temp file
-      await FileSystem.writeAsStringAsync(fileUri, base64Data, {
-        encoding: "base64",
-      });
-
-      // Open native share sheet
-      await Sharing.shareAsync(fileUri, {
-        mimeType: "image/png",
-        UTI: "public.png",
-        dialogTitle: "Share Meme",
-      });
-
-      // Cleanup temp file after sharing
-      setTimeout(async () => {
-        try {
-          await FileSystem.deleteAsync(fileUri, { idempotent: true });
-        } catch (e) {}
-      }, 15000);
-
-    } catch (error: any) {
-      console.error("Share error:", error);
-      Alert.alert("Share Error", "Could not share. Please try again.");
-    }
+    trackUsage(meme.id);
+    await shareMemeAction(meme);
   };
 
   const saveToDevice = async (meme: Meme) => {
-    try {
-      trackUsage(meme.id);
-
-      if (Platform.OS === "web") {
-        const link = document.createElement("a");
-        link.href = meme.image_base64;
-        link.download = `MemeVault_${meme.id}.png`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        window.alert("Meme saved to your downloads!");
-        return;
-      }
-
-      // Request permissions
-      const { status } = await MediaLibrary.requestPermissionsAsync();
-      if (status !== "granted") {
-        Alert.alert(
-          "Permission Required",
-          "Please grant permission to save images to your photos"
-        );
-        return;
-      }
-
-      const base64Data = meme.image_base64.replace(/^data:image\/\w+;base64,/, "");
-      const filename = `MemeVault_${Date.now()}.png`;
-      const fileUri = `${FileSystem.documentDirectory}${filename}`;
-
-      await FileSystem.writeAsStringAsync(fileUri, base64Data, {
-        encoding: "base64",
-      });
-
-      const asset = await MediaLibrary.createAssetAsync(fileUri);
-      
-      // Cleanup temp file
-      await FileSystem.deleteAsync(fileUri, { idempotent: true });
-
-      Alert.alert("Saved!", "Meme saved to your photos! 📸");
-    } catch (error) {
-      console.error("Error saving:", error);
-      if (Platform.OS !== "web") {
-        Alert.alert("Error", "Failed to save meme");
-      }
-    }
+    trackUsage(meme.id);
+    await saveToDeviceAction(meme);
   };
 
   const deleteMeme = async (meme: Meme) => {

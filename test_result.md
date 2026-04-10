@@ -189,7 +189,49 @@ backend:
         agent: "testing"
         comment: "✅ Statistics endpoint working correctly. Returns proper counts for memes, categories, and users."
 
+  - task: "Explore Memes API"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Explore endpoint /api/memes/explore returns random public memes. Needs testing to verify random sampling and response format."
+      - working: true
+        agent: "testing"
+        comment: "✅ Explore Memes API fully tested and working correctly. Default endpoint returns 50 random public memes, custom limit parameter works (tested with limit=5). All required fields present: id, name, image_base64, category, tags, use_count, created_at, is_public, username. All memes returned are public (is_public=true). Random sampling working as expected. Existing endpoints (GET /api/memes, GET /api/categories, GET /api/stats) still functioning correctly."
+
 frontend:
+  - task: "Share Meme Functionality (Native Share Sheet)"
+    implemented: true
+    working: "NA"
+    file: "frontend/utils/memeActions.ts"
+    stuck_count: 3
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: false
+        agent: "user"
+        comment: "User reported share button shows 'Meme downloaded!' instead of opening native share sheet. Previously working but broke after code changes."
+      - working: "NA"
+        agent: "main"
+        comment: "Refactored sharing logic into centralized utils/memeActions.ts. Fixed: 1) Uses expo-file-system/legacy for correct API version, 2) Writes base64 to FileSystem.cacheDirectory temp file before sharing, 3) Passes file URI to Sharing.shareAsync(), 4) Proper web fallback, 5) Updated all 3 tab screens (index.tsx, favorites.tsx, recent.tsx) to use the utility."
+
+  - task: "Explore Page"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/(tabs)/explore.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "New Explore page with 2-column grid of random memes. Features: category badges, favorite hearts, Shuffle button for new random memes, meme detail modal with Share/Like/Save actions. Tab bar reorganized to 6 tabs (Categories hidden, accessible via home screen filters)."
+
   - task: "Frontend Testing"
     implemented: true
     working: "NA"
@@ -209,8 +251,7 @@ metadata:
   run_ui: false
 
 test_plan:
-  current_focus:
-    - "All backend API endpoints tested and verified"
+  current_focus: []
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -218,3 +259,7 @@ test_plan:
 agent_communication:
   - agent: "testing"
     message: "Completed comprehensive backend API testing. All 12 endpoints tested successfully with 100% pass rate. Backend is fully functional and ready for production use."
+  - agent: "main"
+    message: "Added new Explore Memes API endpoint at /api/memes/explore. Please test this endpoint to verify: 1) Returns random public memes, 2) Respects the limit parameter, 3) Returns proper MemeResponse format with username field. Also test existing endpoints still work."
+  - agent: "testing"
+    message: "✅ EXPLORE MEMES API TESTING COMPLETE: Successfully tested new /api/memes/explore endpoint. All requirements verified: 1) Returns random public memes (tested with 50 default and 5 custom limit), 2) Respects limit parameter correctly, 3) Returns proper MemeResponse format with all required fields (id, name, image_base64, category, tags, use_count, created_at, is_public, username), 4) All returned memes are public (is_public=true), 5) Existing endpoints (GET /api/memes, GET /api/categories, GET /api/stats) still functioning correctly. Backend testing complete with 14/14 tests passing (100% success rate)."
