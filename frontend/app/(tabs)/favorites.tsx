@@ -116,7 +116,10 @@ export default function FavoritesScreen() {
     try {
       trackUsage(meme.id);
 
-      if (Platform.OS === "web") {
+      // Check if native mobile
+      const isNativeMobile = Platform.OS === "ios" || Platform.OS === "android";
+      
+      if (!isNativeMobile) {
         const link = document.createElement("a");
         link.href = meme.image_base64;
         link.download = `MemeVault_${meme.id}.png`;
@@ -127,22 +130,26 @@ export default function FavoritesScreen() {
         return;
       }
 
+      // Native mobile: open share sheet
       const base64Data = meme.image_base64.replace(/^data:image\/\w+;base64,/, "");
-      const filename = `MemeVault_Share_${Date.now()}.png`;
+      const filename = `MemeVault_${Date.now()}.png`;
       const fileUri = `${FileSystem.documentDirectory}${filename}`;
 
       await FileSystem.writeAsStringAsync(fileUri, base64Data, {
         encoding: "base64",
       });
 
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(fileUri, {
-          mimeType: "image/png",
-          UTI: "public.png",
-        });
-      }
+      await Sharing.shareAsync(fileUri, {
+        mimeType: "image/png",
+        UTI: "public.png",
+        dialogTitle: "Share Meme",
+      });
 
       setTimeout(async () => {
+        try {
+          await FileSystem.deleteAsync(fileUri, { idempotent: true });
+        } catch (e) {}
+      }, 15000);
         try {
           await FileSystem.deleteAsync(fileUri, { idempotent: true });
         } catch (e) {}

@@ -163,8 +163,11 @@ export default function MemesScreen() {
     try {
       trackUsage(meme.id);
 
-      if (Platform.OS === "web") {
-        // Web: Download the meme
+      // Check if we're on native mobile (iOS/Android)
+      const isNativeMobile = Platform.OS === "ios" || Platform.OS === "android";
+      
+      if (!isNativeMobile) {
+        // Web browser: Download the meme
         const link = document.createElement("a");
         link.href = meme.image_base64;
         link.download = `MemeVault_${meme.id}.png`;
@@ -175,55 +178,33 @@ export default function MemesScreen() {
         return;
       }
 
-      // Mobile: Create temp file and share
+      // Native Mobile (iOS/Android): Create temp file and open native share sheet
       const base64Data = meme.image_base64.replace(/^data:image\/\w+;base64,/, "");
-      const filename = `MemeVault_Share_${Date.now()}.png`;
+      const filename = `MemeVault_${Date.now()}.png`;
       const fileUri = `${FileSystem.documentDirectory}${filename}`;
 
-      // Write the base64 data to a file
+      // Write the image to a temp file
       await FileSystem.writeAsStringAsync(fileUri, base64Data, {
         encoding: "base64",
       });
 
-      // Verify file was created
-      const fileInfo = await FileSystem.getInfoAsync(fileUri);
-      console.log("File created:", fileInfo);
+      // Open native share sheet
+      await Sharing.shareAsync(fileUri, {
+        mimeType: "image/png",
+        UTI: "public.png",
+        dialogTitle: "Share Meme",
+      });
 
-      if (!fileInfo.exists) {
-        throw new Error("Failed to create file");
-      }
-
-      // Share the file
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(fileUri, {
-          mimeType: "image/png",
-          UTI: "public.png",
-        });
-      } else {
-        // Fallback
-        await Share.share({
-          url: fileUri,
-        });
-      }
-
-      // Cleanup after delay
+      // Cleanup temp file after sharing
       setTimeout(async () => {
         try {
           await FileSystem.deleteAsync(fileUri, { idempotent: true });
-        } catch (e) {
-          // Ignore cleanup errors
-        }
-      }, 10000);
+        } catch (e) {}
+      }, 15000);
 
     } catch (error: any) {
       console.error("Share error:", error);
-      if (Platform.OS !== "web") {
-        Alert.alert(
-          "Share Error",
-          "Could not share. Please try saving the meme first.",
-          [{ text: "OK" }]
-        );
-      }
+      Alert.alert("Share Error", "Could not share. Please try again.");
     }
   };
 
