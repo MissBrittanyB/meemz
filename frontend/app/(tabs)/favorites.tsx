@@ -150,10 +150,6 @@ export default function FavoritesScreen() {
           await FileSystem.deleteAsync(fileUri, { idempotent: true });
         } catch (e) {}
       }, 15000);
-        try {
-          await FileSystem.deleteAsync(fileUri, { idempotent: true });
-        } catch (e) {}
-      }, 10000);
 
     } catch (error) {
       console.error("Error sharing:", error);
