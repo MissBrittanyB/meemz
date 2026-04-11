@@ -557,7 +557,7 @@ export default function ProfileScreen() {
                     openSocialLink("threads", user.social_links!.threads!)
                   }
                 >
-                  <Ionicons name="at-outline" size={18} color="#000" />
+                  <Ionicons name="at-outline" size={18} color="#ccc" />
                   <Text style={styles.socialHandle}>
                     @{user.social_links.threads.replace("@", "")}
                   </Text>

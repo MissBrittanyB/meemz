@@ -11,6 +11,8 @@ from typing import List, Optional
 import uuid
 from datetime import datetime, timedelta
 import base64
+import io
+from PIL import Image as PILImage
 from passlib.context import CryptContext
 from jose import JWTError, jwt
 from emergentintegrations.payments.stripe.checkout import (
@@ -82,6 +84,49 @@ async def get_required_user(credentials: HTTPAuthorizationCredentials = Depends(
     if not user:
         raise HTTPException(status_code=401, detail="Not authenticated")
     return user
+
+# ============ THUMBNAIL HELPER ============
+
+THUMBNAIL_MAX_WIDTH = 300
+THUMBNAIL_QUALITY = 60
+
+def generate_thumbnail(image_base64: str) -> Optional[str]:
+    """Generate a small thumbnail from a base64 image. Returns thumbnail as data URI or None."""
+    try:
+        # Extract raw base64 and detect mime type
+        if "," in image_base64:
+            header, raw_b64 = image_base64.split(",", 1)
+        else:
+            header = ""
+            raw_b64 = image_base64
+
+        img_bytes = base64.b64decode(raw_b64)
+
+        # Skip video data
+        if header.startswith("data:video/"):
+            return None
+
+        # For GIFs, extract first frame as JPEG thumbnail
+        img = PILImage.open(io.BytesIO(img_bytes))
+        if img.mode in ("RGBA", "P", "LA"):
+            img = img.convert("RGB")
+
+        # Resize proportionally
+        w, h = img.size
+        if w > THUMBNAIL_MAX_WIDTH:
+            ratio = THUMBNAIL_MAX_WIDTH / w
+            new_w = THUMBNAIL_MAX_WIDTH
+            new_h = int(h * ratio)
+            img = img.resize((new_w, new_h), PILImage.Resampling.LANCZOS)
+
+        # Encode as JPEG
+        buffer = io.BytesIO()
+        img.save(buffer, format="JPEG", quality=THUMBNAIL_QUALITY, optimize=True)
+        thumb_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+        return f"data:image/jpeg;base64,{thumb_b64}"
+    except Exception as e:
+        logger.warning(f"Thumbnail generation failed: {e}")
+        return None
 
 # ============ MODELS ============
 
@@ -196,6 +241,7 @@ class Meme(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     name: str
     image_base64: str
+    thumbnail_base64: Optional[str] = None
     category: str
     tags: List[str] = []
     use_count: int = 0
@@ -216,6 +262,7 @@ class MemeResponse(BaseModel):
     id: str
     name: str
     image_base64: str
+    thumbnail_base64: Optional[str] = None
     category: str
     tags: List[str]
     use_count: int
@@ -224,6 +271,20 @@ class MemeResponse(BaseModel):
     is_public: bool = True
     username: Optional[str] = None  # Creator's username
     media_type: str = "image"  # "image", "gif", or "video"
+
+class MemeListItem(BaseModel):
+    """Lightweight meme for list/grid views - uses thumbnail instead of full image"""
+    id: str
+    name: str
+    thumbnail_base64: Optional[str] = None
+    category: str
+    tags: List[str] = []
+    use_count: int = 0
+    created_at: datetime
+    user_id: Optional[str] = None
+    is_public: bool = True
+    username: Optional[str] = None
+    media_type: str = "image"
 
 class FavoriteAction(BaseModel):
     meme_id: str
@@ -304,10 +365,12 @@ async def login(user_data: UserLogin):
         "user": {
             "id": user["id"],
             "email": user["email"],
-            "username": user["username"],
-            "display_name": user.get("display_name", user["username"]),
+            "username": user.get("username", "").strip(),
+            "display_name": user.get("display_name", user.get("username", "")).strip(),
             "avatar": user.get("avatar"),
             "bio": user.get("bio"),
+            "profile_image": user.get("profile_image"),
+            "social_links": user.get("social_links"),
             "meme_count": meme_count,
             "is_admin": user.get("is_admin", False),
         }
@@ -390,7 +453,7 @@ async def get_user_basic_profile(username: str):
 
 @api_router.get("/users/{username}/memes")
 async def get_user_memes(username: str, current_user: dict = Depends(get_current_user)):
-    """Get a user's memes"""
+    """Get a user's memes - returns thumbnails for fast grid loading"""
     clean_username = username.strip().lower()
     user = await db.users.find_one({"username": clean_username})
     if not user:
@@ -400,13 +463,16 @@ async def get_user_memes(username: str, current_user: dict = Depends(get_current
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     
+    # Exclude full image_base64 from list queries for performance
+    projection = {"image_base64": 0}
+    
     # If viewing own profile, show all memes; otherwise only public
     if current_user and current_user["id"] == user["id"]:
-        memes = await db.memes.find({"user_id": user["id"]}).sort("created_at", -1).to_list(500)
+        memes = await db.memes.find({"user_id": user["id"]}, projection).sort("created_at", -1).to_list(500)
     else:
-        memes = await db.memes.find({"user_id": user["id"], "is_public": True}).sort("created_at", -1).to_list(500)
+        memes = await db.memes.find({"user_id": user["id"], "is_public": True}, projection).sort("created_at", -1).to_list(500)
     
-    return [MemeResponse(**meme, username=user["username"]) for meme in memes]
+    return [MemeListItem(**meme, username=user["username"]) for meme in memes]
 
 # ============ PUBLIC PROFILE + FOLLOW ENDPOINTS ============
 
@@ -501,7 +567,7 @@ async def delete_category(category_id: str):
 
 # ============ MEME ENDPOINTS ============
 
-@api_router.get("/memes", response_model=List[MemeResponse])
+@api_router.get("/memes", response_model=List[MemeListItem])
 async def get_memes(
     search: Optional[str] = None,
     category: Optional[str] = None,
@@ -509,7 +575,7 @@ async def get_memes(
     skip: int = 0,
     public_only: bool = True
 ):
-    """Get memes with optional filters"""
+    """Get memes with optional filters - returns thumbnails for fast grid loading"""
     query = {}
     
     if public_only:
@@ -524,7 +590,11 @@ async def get_memes(
     if category and category != "All":
         query["category"] = category
     
-    memes = await db.memes.find(query).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+    # Exclude full image_base64 from list queries for performance
+    projection = {
+        "image_base64": 0,
+    }
+    memes = await db.memes.find(query, projection).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
     
     # Get usernames for memes with user_id
     result = []
@@ -534,7 +604,7 @@ async def get_memes(
             user = await db.users.find_one({"id": meme["user_id"]})
             if user:
                 username = user["username"]
-        result.append(MemeResponse(**meme, username=username))
+        result.append(MemeListItem(**meme, username=username))
     
     return result
 
@@ -631,10 +701,11 @@ async def get_meme_as_video(meme_id: str):
 
 @api_router.get("/memes/explore")
 async def explore_memes(limit: int = 20):
-    """Get random public memes for discovery"""
+    """Get random public memes for discovery - returns thumbnails for fast loading"""
     pipeline = [
         {"$match": {"is_public": True}},
-        {"$sample": {"size": limit}}
+        {"$sample": {"size": limit}},
+        {"$project": {"image_base64": 0}}
     ]
     memes = await db.memes.aggregate(pipeline).to_list(limit)
     
@@ -645,7 +716,7 @@ async def explore_memes(limit: int = 20):
             user = await db.users.find_one({"id": meme["user_id"]})
             if user:
                 username = user["username"]
-        result.append(MemeResponse(**meme, username=username))
+        result.append(MemeListItem(**meme, username=username))
     
     return result
 
@@ -677,6 +748,12 @@ async def create_meme(meme: MemeCreate, current_user: dict = Depends(get_current
     elif image_data.startswith("data:video/"):
         meme_obj.media_type = "video"
         logger.info(f"Auto-detected video from data URI for meme: {meme_obj.name}")
+    
+    # Generate thumbnail for faster grid loading
+    thumb = generate_thumbnail(image_data)
+    if thumb:
+        meme_obj.thumbnail_base64 = thumb
+        logger.info(f"Generated thumbnail for meme: {meme_obj.name}")
     
     # If user is logged in, associate meme with user
     if current_user:
@@ -1400,7 +1477,7 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def startup_event():
-    """Seed categories on startup"""
+    """Seed categories and generate thumbnails on startup"""
     logger.info("Seeding default categories...")
     default_categories = [
         {"name": "Reactions", "icon": "😂"},
@@ -1419,6 +1496,35 @@ async def startup_event():
             cat_obj = Category(**cat)
             await db.categories.insert_one(cat_obj.dict())
     logger.info("Categories seeded!")
+    
+    # Generate thumbnails for memes that don't have one yet
+    missing_thumb_count = await db.memes.count_documents({
+        "$or": [
+            {"thumbnail_base64": {"$exists": False}},
+            {"thumbnail_base64": None}
+        ]
+    })
+    if missing_thumb_count > 0:
+        logger.info(f"Generating thumbnails for {missing_thumb_count} memes...")
+        cursor = db.memes.find({
+            "$or": [
+                {"thumbnail_base64": {"$exists": False}},
+                {"thumbnail_base64": None}
+            ]
+        }, {"id": 1, "image_base64": 1})
+        generated = 0
+        async for meme in cursor:
+            image_data = meme.get("image_base64", "")
+            if image_data:
+                thumb = generate_thumbnail(image_data)
+                if thumb:
+                    await db.memes.update_one(
+                        {"id": meme["id"]},
+                        {"$set": {"thumbnail_base64": thumb}}
+                    )
+                    generated += 1
+        logger.info(f"Generated {generated} thumbnails!")
+
 @app.on_event("shutdown")
 async def shutdown_db_client():
     client.close()

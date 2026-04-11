@@ -48,7 +48,8 @@ interface UserProfile {
 interface Meme {
   id: string;
   name: string;
-  image_base64: string;
+  image_base64?: string;
+  thumbnail_base64?: string;
   category: string;
   media_type?: string;
 }
@@ -67,6 +68,7 @@ export default function UserProfileScreen() {
   const [loading, setLoading] = useState(true);
   const [followLoading, setFollowLoading] = useState(false);
   const [selectedMeme, setSelectedMeme] = useState<Meme | null>(null);
+  const [fullMeme, setFullMeme] = useState<Meme | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   useEffect(() => {
@@ -142,33 +144,48 @@ export default function UserProfileScreen() {
     }
   };
 
+  const openMemeDetail = async (meme: Meme) => {
+    setSelectedMeme(meme);
+    setFullMeme(null);
+    try {
+      const res = await axios.get(`${API_URL}/api/memes/${meme.id}`);
+      setFullMeme(res.data);
+    } catch {
+      setFullMeme(meme);
+    }
+  };
+
   const shareMeme = async (meme: Meme) => {
     setActionLoading("share");
-    await shareMemeAction(meme);
+    const m = fullMeme || meme;
+    await shareMemeAction(m as any);
     setActionLoading(null);
   };
 
   const copyMeme = async (meme: Meme) => {
     setActionLoading("copy");
-    await copyMemeAction(meme);
+    const m = fullMeme || meme;
+    await copyMemeAction(m as any);
     setActionLoading(null);
   };
 
   const saveMeme = async (meme: Meme) => {
     setActionLoading("save");
-    await saveToDeviceAction(meme);
+    const m = fullMeme || meme;
+    await saveToDeviceAction(m as any);
     setActionLoading(null);
   };
 
   const renderMemeItem = ({ item }: { item: Meme }) => {
-    const itemIsGif = item.media_type === "gif" || item.image_base64?.startsWith("data:image/gif");
+    const itemIsGif = item.media_type === "gif" || item.thumbnail_base64?.startsWith("data:image/gif");
+    const displayUri = item.thumbnail_base64 || item.image_base64 || "";
     return (
       <TouchableOpacity
         style={styles.memeItem}
-        onPress={() => setSelectedMeme(item)}
+        onPress={() => openMemeDetail(item)}
         activeOpacity={0.8}
       >
-        <Image source={{ uri: item.image_base64 }} style={styles.memeImage} resizeMode="cover" />
+        <Image source={{ uri: displayUri }} style={styles.memeImage} resizeMode="cover" />
         {itemIsGif && (
           <View style={styles.gifBadge}>
             <Text style={styles.gifBadgeText}>GIF</Text>
@@ -314,7 +331,7 @@ export default function UserProfileScreen() {
             {selectedMeme && (
               <>
                 <Image
-                  source={{ uri: selectedMeme.image_base64 }}
+                  source={{ uri: (fullMeme?.image_base64 || selectedMeme.thumbnail_base64 || selectedMeme.image_base64) }}
                   style={styles.modalImage}
                   resizeMode="contain"
                 />

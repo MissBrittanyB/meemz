@@ -137,28 +137,103 @@ export async function copyMemeAction(meme: MemeData): Promise<boolean> {
       }
     }
 
-    // --- NATIVE: GIFs and Videos ---
-    // Clipboard doesn't support animated GIFs, use share sheet instead
-    if (isGif(meme) || isVideo(meme)) {
-      console.log("[memeActions] GIF/Video - using share sheet for copy");
-      const fileUri = await writeToTempFile(meme);
-      const isAvailable = await Sharing.isAvailableAsync();
+    // --- NATIVE: GIFs ---
+    // iOS clipboard does NOT support animated GIFs (strips animation).
+    // Best approach: Convert to MP4, save to Camera Roll so user can
+    // attach the animated video from their Photos in any social app.
+    if (isGif(meme)) {
+      console.log("[memeActions] GIF detected - saving animated MP4 to Camera Roll");
 
-      if (isAvailable) {
-        const { mimeType, uti } = getMediaInfo(meme);
-        await Sharing.shareAsync(fileUri, {
-          mimeType,
-          dialogTitle: "Share this Meemz",
-          UTI: uti,
-        });
-        setTimeout(() => cleanupFile(fileUri), 30000);
-        return true;
+      // Request media library permission first
+      const { status } = await MediaLibrary.requestPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert(
+          "Permission Required",
+          "Please allow photo library access to save animated meemz.",
+          [{ text: "OK" }]
+        );
+        return false;
       }
-      return false;
+
+      const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || "";
+
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          console.log(`[memeActions] Copy MP4 conversion attempt ${attempt}/3`);
+          const response = await fetch(`${API_URL}/api/memes/${meme.id}/video`);
+
+          if (response.ok) {
+            const videoData = await response.json();
+            if (videoData.video_base64) {
+              const rawMp4Base64 = extractBase64(videoData.video_base64);
+              if (!FileSystem.cacheDirectory) throw new Error("Cache not available");
+
+              const mp4FileUri = FileSystem.cacheDirectory + `meemz_copy_${meme.id}_${Date.now()}.mp4`;
+              await FileSystem.writeAsStringAsync(mp4FileUri, rawMp4Base64, {
+                encoding: FileSystem.EncodingType.Base64,
+              });
+
+              const fileInfo = await FileSystem.getInfoAsync(mp4FileUri);
+              if (!fileInfo.exists || (fileInfo as any).size < 100) {
+                throw new Error("MP4 file too small or missing");
+              }
+
+              // Save to Camera Roll
+              await MediaLibrary.createAssetAsync(mp4FileUri);
+              cleanupFile(mp4FileUri);
+
+              Alert.alert(
+                "Saved with Motion!",
+                "Animated meemz saved to your Camera Roll! Open any social app and attach it from your Photos for full animation.",
+                [{ text: "Got it!" }]
+              );
+              console.log("[memeActions] GIF saved as MP4 to Camera Roll!");
+              return true;
+            }
+          }
+        } catch (err: any) {
+          console.log(`[memeActions] Copy MP4 attempt ${attempt} failed:`, err?.message);
+        }
+        if (attempt < 3) await new Promise((r) => setTimeout(r, 1000));
+      }
+
+      // Fallback: save original GIF to camera roll
+      console.log("[memeActions] MP4 conversion failed, saving original GIF to Camera Roll");
+      try {
+        const fileUri = await writeToTempFile(meme);
+        await MediaLibrary.createAssetAsync(fileUri);
+        cleanupFile(fileUri);
+        Alert.alert(
+          "Saved!",
+          "Meemz saved to your Camera Roll. Attach it from your Photos in any social app. Note: some apps may not animate GIFs.",
+          [{ text: "Got it!" }]
+        );
+        return true;
+      } catch (fallbackErr: any) {
+        console.error("[memeActions] GIF save fallback failed:", fallbackErr?.message);
+        Alert.alert("Copy Issue", "Could not save animated meemz. Try using Share instead.");
+        return false;
+      }
+    }
+
+    // --- NATIVE: Videos ---
+    // Save video to Camera Roll for easy pasting into social apps
+    if (isVideo(meme)) {
+      console.log("[memeActions] Video - saving to Camera Roll");
+      const { status } = await MediaLibrary.requestPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert("Permission Required", "Please allow photo library access to save meemz.");
+        return false;
+      }
+      const fileUri = await writeToTempFile(meme);
+      await MediaLibrary.createAssetAsync(fileUri);
+      cleanupFile(fileUri);
+      Alert.alert("Saved!", "Meemz video saved to your Camera Roll! Attach it from your Photos in any app.");
+      return true;
     }
 
     // --- NATIVE: Static Images ---
-    // IMPORTANT: setImageAsync requires FULL data URI with prefix
+    // Clipboard.setImageAsync works for static PNG/JPEG
     let imageDataUri = meme.image_base64;
     if (!imageDataUri.startsWith("data:")) {
       imageDataUri = `data:image/png;base64,${imageDataUri}`;
@@ -173,14 +248,14 @@ export async function copyMemeAction(meme: MemeData): Promise<boolean> {
     } catch (clipErr: any) {
       console.log("[memeActions] setImageAsync failed:", clipErr?.message || clipErr);
 
-      // Fallback: share sheet
+      // Fallback: save to Camera Roll
       try {
-        const fileUri = await writeToTempFile(meme);
-        const isAvailable = await Sharing.isAvailableAsync();
-        if (isAvailable) {
-          const { mimeType, uti } = getMediaInfo(meme);
-          await Sharing.shareAsync(fileUri, { mimeType, dialogTitle: "Copy this Meemz", UTI: uti });
-          setTimeout(() => cleanupFile(fileUri), 30000);
+        const { status } = await MediaLibrary.requestPermissionsAsync();
+        if (status === "granted") {
+          const fileUri = await writeToTempFile(meme);
+          await MediaLibrary.createAssetAsync(fileUri);
+          cleanupFile(fileUri);
+          Alert.alert("Saved!", "Couldn't copy to clipboard directly, but meemz was saved to your Camera Roll!");
           return true;
         }
       } catch (fbErr: any) {

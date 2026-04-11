@@ -25,7 +25,8 @@ const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || "";
 interface Meme {
   id: string;
   name: string;
-  image_base64: string;
+  image_base64?: string;
+  thumbnail_base64?: string;
   category: string;
   tags: string[];
   use_count: number;
@@ -41,6 +42,8 @@ export default function ExploreScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedMeme, setSelectedMeme] = useState<Meme | null>(null);
+  const [fullMeme, setFullMeme] = useState<Meme | null>(null);
+  const [fullMemeLoading, setFullMemeLoading] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [favorites, setFavorites] = useState<string[]>([]);
   const [deviceId, setDeviceId] = useState("");
@@ -164,7 +167,8 @@ export default function ExploreScreen() {
     if (!authed) return;
     try {
       trackUsage(meme.id);
-      await shareMemeAction(meme);
+      const m = fullMeme || meme;
+      await shareMemeAction(m as any);
     } catch (e: any) {
       Alert.alert("Share Error", e?.message || "Unknown error");
     }
@@ -175,7 +179,8 @@ export default function ExploreScreen() {
     if (!authed) return;
     try {
       trackUsage(meme.id);
-      await copyMemeAction(meme);
+      const m = fullMeme || meme;
+      await copyMemeAction(m as any);
     } catch (e: any) {
       Alert.alert("Copy Error", e?.message || "Unknown error");
     }
@@ -186,15 +191,27 @@ export default function ExploreScreen() {
     if (!authed) return;
     try {
       trackUsage(meme.id);
-      await saveToDeviceAction(meme);
+      const m = fullMeme || meme;
+      await saveToDeviceAction(m as any);
     } catch (e: any) {
       Alert.alert("Save Error", e?.message || "Unknown error");
     }
   };
 
-  const openMeme = (meme: Meme) => {
+  const openMeme = async (meme: Meme) => {
     setSelectedMeme(meme);
+    setFullMeme(null);
+    setFullMemeLoading(true);
     setModalVisible(true);
+    try {
+      const res = await axios.get(`${API_URL}/api/memes/${meme.id}`);
+      setFullMeme(res.data);
+    } catch (err) {
+      console.error("Error fetching full meme:", err);
+      setFullMeme(meme);
+    } finally {
+      setFullMemeLoading(false);
+    }
   };
 
   const getCategoryColor = (category: string) => {
@@ -220,7 +237,7 @@ export default function ExploreScreen() {
         activeOpacity={0.85}
       >
         <Image
-          source={{ uri: item.image_base64 }}
+          source={{ uri: item.thumbnail_base64 || item.image_base64 || "" }}
           style={styles.memeImage}
           resizeMode="cover"
         />
@@ -333,7 +350,7 @@ export default function ExploreScreen() {
             {selectedMeme && (
               <>
                 <Image
-                  source={{ uri: selectedMeme.image_base64 }}
+                  source={{ uri: (fullMeme?.image_base64 || selectedMeme.thumbnail_base64 || selectedMeme.image_base64) }}
                   style={styles.modalImage}
                   resizeMode="contain"
                 />

@@ -18,6 +18,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { router } from "expo-router";
 import axios from "axios";
 import { shareMemeAction, saveToDeviceAction, copyMemeAction } from "../../utils/memeActions";
 import GradientText from "../../utils/GradientText";
@@ -33,7 +34,8 @@ const MEME_SIZE = Math.floor((SCREEN_WIDTH - GRID_PADDING * 2 - ITEM_SPACING * (
 interface Meme {
   id: string;
   name: string;
-  image_base64: string;
+  image_base64?: string;
+  thumbnail_base64?: string;
   category: string;
   tags: string[];
   use_count: number;
@@ -225,13 +227,34 @@ export default function MemesScreen() {
     }
   };
 
+  const [fullMeme, setFullMeme] = useState<Meme | null>(null);
+  const [fullMemeLoading, setFullMemeLoading] = useState(false);
+
+  // Fetch full meme detail when modal opens
+  const openMemeModal = async (meme: Meme) => {
+    setSelectedMeme(meme);
+    setFullMeme(null);
+    setFullMemeLoading(true);
+    try {
+      const res = await axios.get(`${API_URL}/api/memes/${meme.id}`);
+      setFullMeme(res.data);
+    } catch (err) {
+      console.error("Error fetching full meme:", err);
+      // Fallback: use thumbnail if available
+      setFullMeme(meme);
+    } finally {
+      setFullMemeLoading(false);
+    }
+  };
+
   const shareMeme = async (meme: Meme) => {
     const authed = await requireAuth();
     if (!authed) return;
     setActionLoading("share");
     try {
       trackUsage(meme.id);
-      await shareMemeAction(meme);
+      const memeToShare = fullMeme || meme;
+      await shareMemeAction(memeToShare as any);
     } catch (e: any) {
       console.error("shareMeme wrapper error:", e);
       Alert.alert("Share Error", e?.message || "Unknown error occurred");
@@ -246,7 +269,8 @@ export default function MemesScreen() {
     setActionLoading("copy");
     try {
       trackUsage(meme.id);
-      await copyMemeAction(meme);
+      const memeToCopy = fullMeme || meme;
+      await copyMemeAction(memeToCopy as any);
     } catch (e: any) {
       console.error("copyMeme wrapper error:", e);
       Alert.alert("Copy Error", e?.message || "Unknown error occurred");
@@ -261,7 +285,8 @@ export default function MemesScreen() {
     setActionLoading("save");
     try {
       trackUsage(meme.id);
-      await saveToDeviceAction(meme);
+      const memeToSave = fullMeme || meme;
+      await saveToDeviceAction(memeToSave as any);
     } catch (e: any) {
       console.error("saveToDevice wrapper error:", e);
       Alert.alert("Save Error", e?.message || "Unknown error occurred");
@@ -308,15 +333,16 @@ export default function MemesScreen() {
   };
 
   const renderMemeItem = ({ item }: { item: Meme }) => {
-    const itemIsGif = item.media_type === "gif" || item.image_base64?.startsWith("data:image/gif");
+    const itemIsGif = item.media_type === "gif" || item.thumbnail_base64?.startsWith("data:image/gif");
+    const displayUri = item.thumbnail_base64 || item.image_base64 || "";
     return (
       <TouchableOpacity
         style={styles.memeItem}
-        onPress={() => setSelectedMeme(item)}
+        onPress={() => openMemeModal(item)}
         activeOpacity={0.8}
       >
         <Image
-          source={{ uri: item.image_base64 }}
+          source={{ uri: displayUri }}
           style={styles.memeImage}
           resizeMode="cover"
         />
@@ -448,7 +474,7 @@ export default function MemesScreen() {
         visible={selectedMeme !== null}
         transparent
         animationType="fade"
-        onRequestClose={() => setSelectedMeme(null)}
+        onRequestClose={() => { setSelectedMeme(null); setFullMeme(null); }}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -456,21 +482,38 @@ export default function MemesScreen() {
               <>
                 <TouchableOpacity
                   style={styles.closeButton}
-                  onPress={() => setSelectedMeme(null)}
+                  onPress={() => { setSelectedMeme(null); setFullMeme(null); }}
                 >
                   <Ionicons name="close" size={28} color="#fff" />
                 </TouchableOpacity>
 
                 <Image
-                  source={{ uri: selectedMeme.image_base64 }}
+                  source={{ uri: (fullMeme?.image_base64 || selectedMeme.thumbnail_base64 || selectedMeme.image_base64) }}
                   style={styles.modalImage}
                   resizeMode="contain"
                 />
+                {fullMemeLoading && (
+                  <ActivityIndicator size="small" color="#FF7A1A" style={{ position: "absolute", top: 140 }} />
+                )}
 
                 <Text style={styles.modalTitle}>{selectedMeme.name}</Text>
-                <Text style={styles.modalCategory}>
-                  {selectedMeme.category}
-                </Text>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                  <Text style={styles.modalCategory}>
+                    {selectedMeme.category}
+                  </Text>
+                  {selectedMeme.username && (
+                    <TouchableOpacity
+                      onPress={() => {
+                        setSelectedMeme(null);
+                        router.push(`/user/${encodeURIComponent(selectedMeme.username!)}`);
+                      }}
+                    >
+                      <Text style={{ color: "#FF7A1A", fontSize: 13, textDecorationLine: "underline" }}>
+                        by @{selectedMeme.username}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
 
                 {selectedMeme.tags.length > 0 && (
                   <View style={styles.tagsContainer}>
