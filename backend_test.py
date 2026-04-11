@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Backend API Testing for Admin Delete Permissions
-Tests the meemz backend API admin delete functionality
+Backend API Testing for User Profile and Follow Features
+Tests the meemz backend API user profile and follow functionality
 """
 
 import requests
@@ -20,283 +20,381 @@ def log_test(test_name, status, details=""):
     if details:
         print(f"    {details}")
 
-def test_admin_login():
-    """Test 1: Admin login returns is_admin flag"""
-    print("\n=== TEST 1: Admin Login Returns is_admin Flag ===")
+def test_get_public_user_profile():
+    """Test 1: Get public user profile"""
+    print("\n=== TEST 1: Get Public User Profile ===")
     
-    # Try both credential sets to see which one works
-    credentials_to_try = [
-        {"email": "test@memevault.com", "password": "Marchelle7!"},
-        {"email": "test@memevault.com", "password": "Test123!"}
-    ]
-    
-    admin_token = None
-    admin_user = None
-    
-    for creds in credentials_to_try:
-        try:
-            response = requests.post(f"{BACKEND_URL}/auth/login", json=creds)
-            if response.status_code == 200:
-                data = response.json()
-                admin_token = data.get("access_token")
-                admin_user = data.get("user", {})
-                
-                log_test("Admin Login", "PASS", f"Logged in with {creds['password']}")
-                log_test("Admin Token Received", "PASS", f"Token: {admin_token[:20]}...")
-                
-                # Check if is_admin flag is present and true
-                is_admin = admin_user.get("is_admin", False)
-                if is_admin:
-                    log_test("Admin Flag Check", "PASS", f"is_admin: {is_admin}")
-                else:
-                    log_test("Admin Flag Check", "FAIL", f"is_admin: {is_admin} (expected True)")
-                
-                return admin_token, admin_user
-                
-        except Exception as e:
-            log_test("Admin Login", "FAIL", f"Error with {creds['password']}: {str(e)}")
-    
-    log_test("Admin Login", "FAIL", "Could not login with either password")
-    return None, None
+    try:
+        response = requests.get(f"{BACKEND_URL}/users/missbrittanyb/profile")
+        
+        if response.status_code == 200:
+            data = response.json()
+            
+            # Check required fields
+            required_fields = ["username", "display_name", "bio", "social_links", 
+                             "meme_count", "followers_count", "following_count", "is_following"]
+            
+            missing_fields = [field for field in required_fields if field not in data]
+            
+            if missing_fields:
+                log_test("Public Profile Fields", "FAIL", f"Missing fields: {missing_fields}")
+                return False
+            
+            # Check is_following is false without auth
+            if data.get("is_following") != False:
+                log_test("Public Profile is_following", "FAIL", f"Expected False, got {data.get('is_following')}")
+                return False
+            
+            log_test("Get Public User Profile", "PASS", 
+                    f"Username: {data.get('username')}, Memes: {data.get('meme_count')}, "
+                    f"Followers: {data.get('followers_count')}, Following: {data.get('following_count')}")
+            return True
+            
+        else:
+            log_test("Get Public User Profile", "FAIL", f"Status: {response.status_code}, Response: {response.text}")
+            return False
+            
+    except Exception as e:
+        log_test("Get Public User Profile", "FAIL", f"Error: {str(e)}")
+        return False
 
-def test_auth_me_admin_flag(admin_token):
-    """Test 2: Auth/me returns is_admin flag"""
-    print("\n=== TEST 2: Auth/me Returns is_admin Flag ===")
+def test_login_and_get_auth_profile():
+    """Test 2: Get user profile with auth (shows is_following)"""
+    print("\n=== TEST 2: Get User Profile with Auth ===")
     
-    if not admin_token:
-        log_test("Auth/me Admin Flag", "SKIP", "No admin token available")
+    try:
+        # Login first
+        login_data = {"email": "test@memevault.com", "password": "Test123!"}
+        login_response = requests.post(f"{BACKEND_URL}/auth/login", json=login_data)
+        
+        if login_response.status_code != 200:
+            log_test("Login for Auth Profile", "FAIL", f"Status: {login_response.status_code}, Response: {login_response.text}")
+            return None, False
+        
+        login_result = login_response.json()
+        token = login_result.get("access_token")
+        
+        if not token:
+            log_test("Login Token", "FAIL", "No access token received")
+            return None, False
+        
+        log_test("Login for Auth Profile", "PASS", f"Token: {token[:20]}...")
+        
+        # Get profile with auth
+        headers = {"Authorization": f"Bearer {token}"}
+        response = requests.get(f"{BACKEND_URL}/users/missbrittanyb/profile", headers=headers)
+        
+        if response.status_code == 200:
+            data = response.json()
+            
+            # Check is_following field exists and is boolean
+            is_following = data.get("is_following")
+            if is_following is None:
+                log_test("Auth Profile is_following", "FAIL", "is_following field missing")
+                return token, False
+            
+            if not isinstance(is_following, bool):
+                log_test("Auth Profile is_following", "FAIL", f"Expected boolean, got {type(is_following)}")
+                return token, False
+            
+            log_test("Get Auth User Profile", "PASS", 
+                    f"is_following: {is_following}, Username: {data.get('username')}")
+            return token, True
+            
+        else:
+            log_test("Get Auth User Profile", "FAIL", f"Status: {response.status_code}, Response: {response.text}")
+            return token, False
+            
+    except Exception as e:
+        log_test("Get Auth User Profile", "FAIL", f"Error: {str(e)}")
+        return None, False
+
+def test_follow_user(token):
+    """Test 3: Follow a user"""
+    print("\n=== TEST 3: Follow a User ===")
+    
+    if not token:
+        log_test("Follow User", "SKIP", "No auth token available")
         return False
     
     try:
-        headers = {"Authorization": f"Bearer {admin_token}"}
+        headers = {"Authorization": f"Bearer {token}"}
+        response = requests.post(f"{BACKEND_URL}/users/missbrittanyb/follow", headers=headers)
+        
+        if response.status_code == 200:
+            data = response.json()
+            
+            # Check response format
+            if "action" not in data or "is_following" not in data:
+                log_test("Follow Response Format", "FAIL", f"Missing fields in response: {data}")
+                return False
+            
+            action = data.get("action")
+            is_following = data.get("is_following")
+            
+            if action == "followed" and is_following == True:
+                log_test("Follow User", "PASS", f"Action: {action}, is_following: {is_following}")
+                return True
+            elif action == "unfollowed" and is_following == False:
+                log_test("Follow User", "PASS", f"Already following - toggled to unfollow. Action: {action}, is_following: {is_following}")
+                # Follow again to ensure we're following for next test
+                follow_again = requests.post(f"{BACKEND_URL}/users/missbrittanyb/follow", headers=headers)
+                if follow_again.status_code == 200:
+                    follow_data = follow_again.json()
+                    log_test("Follow User (Second Attempt)", "PASS", f"Action: {follow_data.get('action')}, is_following: {follow_data.get('is_following')}")
+                return True
+            else:
+                log_test("Follow User", "FAIL", f"Unexpected response: action={action}, is_following={is_following}")
+                return False
+            
+        else:
+            log_test("Follow User", "FAIL", f"Status: {response.status_code}, Response: {response.text}")
+            return False
+            
+    except Exception as e:
+        log_test("Follow User", "FAIL", f"Error: {str(e)}")
+        return False
+
+def test_unfollow_user(token):
+    """Test 4: Unfollow a user (toggle)"""
+    print("\n=== TEST 4: Unfollow User (Toggle) ===")
+    
+    if not token:
+        log_test("Unfollow User", "SKIP", "No auth token available")
+        return False
+    
+    try:
+        headers = {"Authorization": f"Bearer {token}"}
+        response = requests.post(f"{BACKEND_URL}/users/missbrittanyb/follow", headers=headers)
+        
+        if response.status_code == 200:
+            data = response.json()
+            
+            action = data.get("action")
+            is_following = data.get("is_following")
+            
+            if action == "unfollowed" and is_following == False:
+                log_test("Unfollow User", "PASS", f"Action: {action}, is_following: {is_following}")
+                return True
+            elif action == "followed" and is_following == True:
+                log_test("Unfollow User", "PASS", f"Was not following - toggled to follow. Action: {action}, is_following: {is_following}")
+                # Unfollow again to test the unfollow action
+                unfollow_again = requests.post(f"{BACKEND_URL}/users/missbrittanyb/follow", headers=headers)
+                if unfollow_again.status_code == 200:
+                    unfollow_data = unfollow_again.json()
+                    log_test("Unfollow User (Second Attempt)", "PASS", f"Action: {unfollow_data.get('action')}, is_following: {unfollow_data.get('is_following')}")
+                return True
+            else:
+                log_test("Unfollow User", "FAIL", f"Unexpected response: action={action}, is_following={is_following}")
+                return False
+            
+        else:
+            log_test("Unfollow User", "FAIL", f"Status: {response.status_code}, Response: {response.text}")
+            return False
+            
+    except Exception as e:
+        log_test("Unfollow User", "FAIL", f"Error: {str(e)}")
+        return False
+
+def test_cannot_follow_yourself():
+    """Test 5: Cannot follow yourself"""
+    print("\n=== TEST 5: Cannot Follow Yourself ===")
+    
+    try:
+        # Login as missbrittanyb
+        login_data = {"email": "brittanyb@thebrandingbar.com", "password": "Marchelle7!"}
+        login_response = requests.post(f"{BACKEND_URL}/auth/login", json=login_data)
+        
+        if login_response.status_code != 200:
+            log_test("Login as missbrittanyb", "FAIL", f"Status: {login_response.status_code}, Response: {login_response.text}")
+            return False
+        
+        login_result = login_response.json()
+        token = login_result.get("access_token")
+        
+        if not token:
+            log_test("Login Token", "FAIL", "No access token received")
+            return False
+        
+        log_test("Login as missbrittanyb", "PASS", f"Token: {token[:20]}...")
+        
+        # Try to follow yourself
+        headers = {"Authorization": f"Bearer {token}"}
+        response = requests.post(f"{BACKEND_URL}/users/missbrittanyb/follow", headers=headers)
+        
+        if response.status_code == 400:
+            data = response.json()
+            detail = data.get("detail", "")
+            
+            if "Cannot follow yourself" in detail:
+                log_test("Cannot Follow Yourself", "PASS", f"Status: 400, Detail: {detail}")
+                return True
+            else:
+                log_test("Cannot Follow Yourself", "FAIL", f"Wrong error message: {detail}")
+                return False
+        else:
+            log_test("Cannot Follow Yourself", "FAIL", f"Expected 400, got {response.status_code}, Response: {response.text}")
+            return False
+            
+    except Exception as e:
+        log_test("Cannot Follow Yourself", "FAIL", f"Error: {str(e)}")
+        return False
+
+def test_auth_me_returns_is_admin():
+    """Test 6: Auth/me returns is_admin"""
+    print("\n=== TEST 6: Auth/me Returns is_admin ===")
+    
+    try:
+        # Login with admin credentials
+        login_data = {"email": "brittanyb@thebrandingbar.com", "password": "Marchelle7!"}
+        login_response = requests.post(f"{BACKEND_URL}/auth/login", json=login_data)
+        
+        if login_response.status_code != 200:
+            log_test("Admin Login", "FAIL", f"Status: {login_response.status_code}, Response: {login_response.text}")
+            return False
+        
+        login_result = login_response.json()
+        token = login_result.get("access_token")
+        
+        if not token:
+            log_test("Admin Login Token", "FAIL", "No access token received")
+            return False
+        
+        log_test("Admin Login", "PASS", f"Token: {token[:20]}...")
+        
+        # Get /auth/me
+        headers = {"Authorization": f"Bearer {token}"}
         response = requests.get(f"{BACKEND_URL}/auth/me", headers=headers)
         
         if response.status_code == 200:
             data = response.json()
-            is_admin = data.get("is_admin", False)
             
-            log_test("Auth/me Request", "PASS", f"Status: {response.status_code}")
+            is_admin = data.get("is_admin")
+            username = data.get("username", "").strip()
             
-            if is_admin:
-                log_test("Auth/me Admin Flag", "PASS", f"is_admin: {is_admin}")
+            if is_admin == True:
+                log_test("Auth/me is_admin", "PASS", f"is_admin: {is_admin}, username: {username}")
                 return True
             else:
-                log_test("Auth/me Admin Flag", "FAIL", f"is_admin: {is_admin} (expected True)")
+                log_test("Auth/me is_admin", "FAIL", f"Expected is_admin: true, got {is_admin}")
                 return False
         else:
             log_test("Auth/me Request", "FAIL", f"Status: {response.status_code}, Response: {response.text}")
             return False
             
     except Exception as e:
-        log_test("Auth/me Request", "FAIL", f"Error: {str(e)}")
+        log_test("Auth/me Returns is_admin", "FAIL", f"Error: {str(e)}")
         return False
 
-def test_admin_can_delete_any_meme(admin_token):
-    """Test 3: Admin can delete any meme"""
-    print("\n=== TEST 3: Admin Can Delete Any Meme ===")
-    
-    if not admin_token:
-        log_test("Admin Delete Test", "SKIP", "No admin token available")
-        return False
+def test_username_with_trailing_space():
+    """Test 7: Username with trailing space still works"""
+    print("\n=== TEST 7: Username with Trailing Space ===")
     
     try:
-        headers = {"Authorization": f"Bearer {admin_token}"}
+        # Test with trailing space in URL
+        response = requests.get(f"{BACKEND_URL}/users/missbrittanyb%20/memes")
         
-        # First get a meme to delete
-        response = requests.get(f"{BACKEND_URL}/memes?limit=1")
-        if response.status_code != 200:
-            log_test("Get Meme for Delete", "FAIL", f"Status: {response.status_code}")
-            return False
-        
-        memes = response.json()
-        if not memes:
-            log_test("Get Meme for Delete", "FAIL", "No memes available to delete")
-            return False
-        
-        meme_to_delete = memes[0]
-        meme_id = meme_to_delete["id"]
-        meme_name = meme_to_delete["name"]
-        
-        log_test("Get Meme for Delete", "PASS", f"Found meme: {meme_name} (ID: {meme_id})")
-        
-        # Try to delete the meme as admin
-        delete_response = requests.delete(f"{BACKEND_URL}/memes/{meme_id}", headers=headers)
-        
-        if delete_response.status_code == 200:
-            data = delete_response.json()
-            message = data.get("message", "")
-            log_test("Admin Delete Meme", "PASS", f"Status: {delete_response.status_code}, Message: {message}")
-            return True
-        else:
-            log_test("Admin Delete Meme", "FAIL", f"Status: {delete_response.status_code}, Response: {delete_response.text}")
-            return False
+        if response.status_code == 200:
+            data = response.json()
             
-    except Exception as e:
-        log_test("Admin Delete Test", "FAIL", f"Error: {str(e)}")
-        return False
-
-def test_non_admin_cannot_delete_others_memes():
-    """Test 4: Non-admin cannot delete others' memes"""
-    print("\n=== TEST 4: Non-admin Cannot Delete Others' Memes ===")
-    
-    try:
-        # Register a new non-admin user
-        new_user_data = {
-            "email": "testuser2@test.com",
-            "password": "Test1234!",
-            "username": "testuser2"
-        }
-        
-        register_response = requests.post(f"{BACKEND_URL}/auth/register", json=new_user_data)
-        
-        if register_response.status_code == 200:
-            reg_data = register_response.json()
-            non_admin_token = reg_data.get("access_token")
-            user_info = reg_data.get("user", {})
-            is_admin = user_info.get("is_admin", False)
-            
-            log_test("Register Non-admin User", "PASS", f"User: {user_info.get('username')}, is_admin: {is_admin}")
-            
-            if is_admin:
-                log_test("Non-admin User Check", "FAIL", f"New user has admin privileges: {is_admin}")
-                return False
-            
-        elif register_response.status_code == 400 and "already registered" in register_response.text:
-            # User already exists, try to login
-            login_response = requests.post(f"{BACKEND_URL}/auth/login", json={
-                "email": new_user_data["email"],
-                "password": new_user_data["password"]
-            })
-            
-            if login_response.status_code == 200:
-                login_data = login_response.json()
-                non_admin_token = login_data.get("access_token")
-                user_info = login_data.get("user", {})
-                is_admin = user_info.get("is_admin", False)
-                
-                log_test("Login Existing Non-admin User", "PASS", f"User: {user_info.get('username')}, is_admin: {is_admin}")
+            if isinstance(data, list):
+                log_test("Username Trailing Space", "PASS", f"Returned {len(data)} memes (backend strips trailing space)")
+                return True
             else:
-                log_test("Login Existing User", "FAIL", f"Status: {login_response.status_code}")
+                log_test("Username Trailing Space", "FAIL", f"Expected array, got {type(data)}")
                 return False
         else:
-            log_test("Register Non-admin User", "FAIL", f"Status: {register_response.status_code}, Response: {register_response.text}")
-            return False
-        
-        # Get a meme that belongs to someone else (or a seed meme)
-        memes_response = requests.get(f"{BACKEND_URL}/memes?limit=5")
-        if memes_response.status_code != 200:
-            log_test("Get Memes for Non-admin Test", "FAIL", f"Status: {memes_response.status_code}")
-            return False
-        
-        memes = memes_response.json()
-        if not memes:
-            log_test("Get Memes for Non-admin Test", "FAIL", "No memes available")
-            return False
-        
-        # Find a meme that doesn't belong to the current user
-        target_meme = None
-        for meme in memes:
-            if meme.get("user_id") != user_info.get("id"):
-                target_meme = meme
-                break
-        
-        if not target_meme:
-            # Use the first meme (likely a seed meme)
-            target_meme = memes[0]
-        
-        meme_id = target_meme["id"]
-        meme_name = target_meme["name"]
-        
-        log_test("Get Target Meme", "PASS", f"Target meme: {meme_name} (ID: {meme_id})")
-        
-        # Try to delete the meme as non-admin
-        headers = {"Authorization": f"Bearer {non_admin_token}"}
-        delete_response = requests.delete(f"{BACKEND_URL}/memes/{meme_id}", headers=headers)
-        
-        if delete_response.status_code == 403:
-            data = delete_response.json()
-            detail = data.get("detail", "")
-            log_test("Non-admin Delete Rejection", "PASS", f"Status: 403, Detail: {detail}")
-            return True
-        else:
-            log_test("Non-admin Delete Rejection", "FAIL", f"Expected 403, got {delete_response.status_code}, Response: {delete_response.text}")
+            log_test("Username Trailing Space", "FAIL", f"Status: {response.status_code}, Response: {response.text}")
             return False
             
     except Exception as e:
-        log_test("Non-admin Delete Test", "FAIL", f"Error: {str(e)}")
+        log_test("Username Trailing Space", "FAIL", f"Error: {str(e)}")
         return False
 
-def test_unauthenticated_delete_rejected():
-    """Test 5: Unauthenticated delete is rejected"""
-    print("\n=== TEST 5: Unauthenticated Delete is Rejected ===")
+def test_get_user_memes():
+    """Test 8: Get user memes"""
+    print("\n=== TEST 8: Get User Memes ===")
     
     try:
-        # Get a meme ID to try deleting
-        response = requests.get(f"{BACKEND_URL}/memes?limit=1")
-        if response.status_code != 200:
-            log_test("Get Meme for Unauth Test", "FAIL", f"Status: {response.status_code}")
-            return False
+        response = requests.get(f"{BACKEND_URL}/users/missbrittanyb/memes")
         
-        memes = response.json()
-        if not memes:
-            log_test("Get Meme for Unauth Test", "FAIL", "No memes available")
-            return False
-        
-        meme_id = memes[0]["id"]
-        meme_name = memes[0]["name"]
-        
-        log_test("Get Meme for Unauth Test", "PASS", f"Target meme: {meme_name} (ID: {meme_id})")
-        
-        # Try to delete without authentication
-        delete_response = requests.delete(f"{BACKEND_URL}/memes/{meme_id}")
-        
-        if delete_response.status_code == 401:
-            data = delete_response.json()
-            detail = data.get("detail", "")
-            log_test("Unauthenticated Delete Rejection", "PASS", f"Status: 401, Detail: {detail}")
-            return True
+        if response.status_code == 200:
+            data = response.json()
+            
+            if isinstance(data, list):
+                log_test("Get User Memes", "PASS", f"Returned {len(data)} memes")
+                
+                # Check structure of first meme if available
+                if data:
+                    meme = data[0]
+                    required_fields = ["id", "name", "image_base64", "category", "tags", 
+                                     "use_count", "created_at", "is_public", "username"]
+                    missing_fields = [field for field in required_fields if field not in meme]
+                    
+                    if missing_fields:
+                        log_test("Meme Structure", "FAIL", f"Missing fields: {missing_fields}")
+                        return False
+                    else:
+                        log_test("Meme Structure", "PASS", f"All required fields present")
+                
+                return True
+            else:
+                log_test("Get User Memes", "FAIL", f"Expected array, got {type(data)}")
+                return False
         else:
-            log_test("Unauthenticated Delete Rejection", "FAIL", f"Expected 401, got {delete_response.status_code}, Response: {delete_response.text}")
+            log_test("Get User Memes", "FAIL", f"Status: {response.status_code}, Response: {response.text}")
             return False
             
     except Exception as e:
-        log_test("Unauthenticated Delete Test", "FAIL", f"Error: {str(e)}")
+        log_test("Get User Memes", "FAIL", f"Error: {str(e)}")
         return False
 
 def main():
-    """Run all admin delete permission tests"""
-    print("🧪 ADMIN DELETE PERMISSIONS TESTING")
-    print("=" * 50)
+    """Run all user profile and follow feature tests"""
+    print("🧪 USER PROFILE AND FOLLOW FEATURES TESTING")
+    print("=" * 60)
     print(f"Backend URL: {BACKEND_URL}")
     print(f"Test Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     
     # Track test results
     test_results = []
     
-    # Test 1: Admin login
-    admin_token, admin_user = test_admin_login()
-    test_results.append(("Admin Login", admin_token is not None))
+    # Test 1: Get public user profile
+    public_profile_result = test_get_public_user_profile()
+    test_results.append(("Get Public User Profile", public_profile_result))
     
-    # Test 2: Auth/me admin flag
-    auth_me_result = test_auth_me_admin_flag(admin_token)
-    test_results.append(("Auth/me Admin Flag", auth_me_result))
+    # Test 2: Get user profile with auth
+    token, auth_profile_result = test_login_and_get_auth_profile()
+    test_results.append(("Get User Profile with Auth", auth_profile_result))
     
-    # Test 3: Admin can delete any meme
-    admin_delete_result = test_admin_can_delete_any_meme(admin_token)
-    test_results.append(("Admin Delete Any Meme", admin_delete_result))
+    # Test 3: Follow a user
+    follow_result = test_follow_user(token)
+    test_results.append(("Follow User", follow_result))
     
-    # Test 4: Non-admin cannot delete others' memes
-    non_admin_result = test_non_admin_cannot_delete_others_memes()
-    test_results.append(("Non-admin Delete Rejection", non_admin_result))
+    # Test 4: Unfollow a user (toggle)
+    unfollow_result = test_unfollow_user(token)
+    test_results.append(("Unfollow User (Toggle)", unfollow_result))
     
-    # Test 5: Unauthenticated delete rejected
-    unauth_result = test_unauthenticated_delete_rejected()
-    test_results.append(("Unauthenticated Delete Rejection", unauth_result))
+    # Test 5: Cannot follow yourself
+    self_follow_result = test_cannot_follow_yourself()
+    test_results.append(("Cannot Follow Yourself", self_follow_result))
+    
+    # Test 6: Auth/me returns is_admin
+    auth_me_result = test_auth_me_returns_is_admin()
+    test_results.append(("Auth/me Returns is_admin", auth_me_result))
+    
+    # Test 7: Username with trailing space
+    trailing_space_result = test_username_with_trailing_space()
+    test_results.append(("Username Trailing Space", trailing_space_result))
+    
+    # Test 8: Get user memes
+    user_memes_result = test_get_user_memes()
+    test_results.append(("Get User Memes", user_memes_result))
     
     # Summary
-    print("\n" + "=" * 50)
+    print("\n" + "=" * 60)
     print("📊 TEST SUMMARY")
-    print("=" * 50)
+    print("=" * 60)
     
     passed = 0
     total = len(test_results)
@@ -310,7 +408,7 @@ def main():
     print(f"\nResults: {passed}/{total} tests passed ({(passed/total)*100:.1f}%)")
     
     if passed == total:
-        print("🎉 ALL TESTS PASSED! Admin delete permissions working correctly.")
+        print("🎉 ALL TESTS PASSED! User profile and follow features working correctly.")
         return 0
     else:
         print("⚠️  Some tests failed. Check the details above.")

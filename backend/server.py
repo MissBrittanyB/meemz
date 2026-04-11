@@ -251,8 +251,8 @@ async def register(user_data: UserRegister):
     user = {
         "id": user_id,
         "email": user_data.email.lower(),
-        "username": user_data.username.lower(),
-        "display_name": user_data.username,
+        "username": user_data.username.strip().lower(),
+        "display_name": user_data.username.strip(),
         "password_hash": get_password_hash(user_data.password),
         "avatar": None,
         "bio": None,
@@ -321,10 +321,12 @@ async def get_me(current_user: dict = Depends(get_required_user)):
     return {
         "id": current_user["id"],
         "email": current_user["email"],
-        "username": current_user["username"],
-        "display_name": current_user.get("display_name", current_user["username"]),
+        "username": current_user.get("username", "").strip(),
+        "display_name": current_user.get("display_name", current_user.get("username", "")).strip(),
         "avatar": current_user.get("avatar"),
         "bio": current_user.get("bio"),
+        "profile_image": current_user.get("profile_image"),
+        "social_links": current_user.get("social_links"),
         "meme_count": meme_count,
         "favorites_count": len(current_user.get("favorites", [])),
         "is_admin": current_user.get("is_admin", False),
@@ -366,7 +368,7 @@ async def update_me(update_data: UserUpdate, current_user: dict = Depends(get_re
 # ============ USER PROFILE ENDPOINTS ============
 
 @api_router.get("/users/{username}")
-async def get_user_profile(username: str):
+async def get_user_basic_profile(username: str):
     """Get a user's public profile"""
     user = await db.users.find_one({"username": username.lower()})
     if not user:
@@ -389,7 +391,12 @@ async def get_user_profile(username: str):
 @api_router.get("/users/{username}/memes")
 async def get_user_memes(username: str, current_user: dict = Depends(get_current_user)):
     """Get a user's memes"""
-    user = await db.users.find_one({"username": username.lower()})
+    clean_username = username.strip().lower()
+    user = await db.users.find_one({"username": clean_username})
+    if not user:
+        # Try case-insensitive regex match
+        import re
+        user = await db.users.find_one({"username": re.compile(f"^{re.escape(clean_username)}\\s*$", re.IGNORECASE)})
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     
@@ -400,6 +407,74 @@ async def get_user_memes(username: str, current_user: dict = Depends(get_current
         memes = await db.memes.find({"user_id": user["id"], "is_public": True}).sort("created_at", -1).to_list(500)
     
     return [MemeResponse(**meme, username=user["username"]) for meme in memes]
+
+# ============ PUBLIC PROFILE + FOLLOW ENDPOINTS ============
+
+@api_router.get("/users/{username}/profile")
+async def get_user_profile(username: str, current_user: dict = Depends(get_current_user)):
+    """Get a user's public profile"""
+    clean_username = username.strip().lower()
+    user = await db.users.find_one({"username": clean_username})
+    if not user:
+        import re
+        user = await db.users.find_one({"username": re.compile(f"^{re.escape(clean_username)}\\s*$", re.IGNORECASE)})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    meme_count = await db.memes.count_documents({"user_id": user["id"]})
+    followers_count = await db.follows.count_documents({"following_id": user["id"]})
+    following_count = await db.follows.count_documents({"follower_id": user["id"]})
+    
+    is_following = False
+    if current_user:
+        follow = await db.follows.find_one({"follower_id": current_user["id"], "following_id": user["id"]})
+        is_following = follow is not None
+    
+    return {
+        "id": user["id"],
+        "username": user.get("username", ""),
+        "display_name": user.get("display_name", user.get("username", "")),
+        "bio": user.get("bio", ""),
+        "profile_image": user.get("profile_image"),
+        "avatar": user.get("avatar"),
+        "social_links": user.get("social_links", {}),
+        "meme_count": meme_count,
+        "followers_count": followers_count,
+        "following_count": following_count,
+        "is_following": is_following,
+        "created_at": user.get("created_at"),
+    }
+
+@api_router.post("/users/{username}/follow")
+async def follow_user(username: str, current_user: dict = Depends(get_required_user)):
+    """Follow/unfollow a user (toggle)"""
+    clean_username = username.strip().lower()
+    target_user = await db.users.find_one({"username": clean_username})
+    if not target_user:
+        import re
+        target_user = await db.users.find_one({"username": re.compile(f"^{re.escape(clean_username)}\\s*$", re.IGNORECASE)})
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    if target_user["id"] == current_user["id"]:
+        raise HTTPException(status_code=400, detail="Cannot follow yourself")
+    
+    # Check if already following - toggle
+    existing = await db.follows.find_one({
+        "follower_id": current_user["id"],
+        "following_id": target_user["id"]
+    })
+    
+    if existing:
+        await db.follows.delete_one({"_id": existing["_id"]})
+        return {"action": "unfollowed", "is_following": False}
+    else:
+        await db.follows.insert_one({
+            "follower_id": current_user["id"],
+            "following_id": target_user["id"],
+            "created_at": datetime.utcnow(),
+        })
+        return {"action": "followed", "is_following": True}
 
 # ============ CATEGORY ENDPOINTS ============
 

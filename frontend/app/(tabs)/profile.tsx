@@ -43,6 +43,7 @@ interface User {
     instagram?: string;
     twitter?: string;
     tiktok?: string;
+    threads?: string;
   } | null;
   meme_count?: number;
 }
@@ -80,6 +81,7 @@ export default function ProfileScreen() {
   const [editInstagram, setEditInstagram] = useState("");
   const [editTwitter, setEditTwitter] = useState("");
   const [editTiktok, setEditTiktok] = useState("");
+  const [editThreads, setEditThreads] = useState("");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -118,8 +120,9 @@ export default function ProfileScreen() {
     try {
       const u = userData || user;
       if (!u?.username) return;
+      const cleanUsername = encodeURIComponent(u.username.trim());
       const response = await axios.get(
-        `${API_URL}/api/users/${u.username}/memes`,
+        `${API_URL}/api/users/${cleanUsername}/memes`,
         { headers: { Authorization: `Bearer ${authToken}` } }
       );
       setMyMemes(response.data);
@@ -249,6 +252,7 @@ export default function ProfileScreen() {
     setEditInstagram(user?.social_links?.instagram || "");
     setEditTwitter(user?.social_links?.twitter || "");
     setEditTiktok(user?.social_links?.tiktok || "");
+    setEditThreads(user?.social_links?.threads || "");
     setIsEditing(true);
   };
 
@@ -263,6 +267,7 @@ export default function ProfileScreen() {
             instagram: editInstagram.trim(),
             twitter: editTwitter.trim(),
             tiktok: editTiktok.trim(),
+            threads: editThreads.trim(),
           },
         },
         { headers: { Authorization: `Bearer ${token}` } }
@@ -299,6 +304,7 @@ export default function ProfileScreen() {
     if (platform === "instagram") url = `https://instagram.com/${cleanHandle}`;
     else if (platform === "twitter") url = `https://x.com/${cleanHandle}`;
     else if (platform === "tiktok") url = `https://tiktok.com/@${cleanHandle}`;
+    else if (platform === "threads") url = `https://threads.net/@${cleanHandle}`;
     if (url) Linking.openURL(url);
   };
 
@@ -544,6 +550,19 @@ export default function ProfileScreen() {
                   </Text>
                 </TouchableOpacity>
               ) : null}
+              {user.social_links.threads ? (
+                <TouchableOpacity
+                  style={styles.socialButton}
+                  onPress={() =>
+                    openSocialLink("threads", user.social_links!.threads!)
+                  }
+                >
+                  <Ionicons name="at-outline" size={18} color="#000" />
+                  <Text style={styles.socialHandle}>
+                    @{user.social_links.threads.replace("@", "")}
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
             </View>
           )}
 
@@ -658,6 +677,24 @@ export default function ProfileScreen() {
                     placeholderTextColor="#666"
                     value={editTiktok}
                     onChangeText={setEditTiktok}
+                    autoCapitalize="none"
+                  />
+                </View>
+              </View>
+              <View style={styles.socialInputGroup}>
+                <Text style={styles.editLabel}>Threads</Text>
+                <View style={styles.socialInputRow}>
+                  <Ionicons
+                    name="at-outline"
+                    size={18}
+                    color="#000"
+                  />
+                  <TextInput
+                    style={styles.socialInput}
+                    placeholder="username"
+                    placeholderTextColor="#666"
+                    value={editThreads}
+                    onChangeText={setEditThreads}
                     autoCapitalize="none"
                   />
                 </View>

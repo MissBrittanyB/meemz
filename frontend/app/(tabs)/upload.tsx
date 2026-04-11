@@ -206,6 +206,20 @@ export default function UploadScreen() {
     setUploading(true);
 
     try {
+      // Validate the image data - reject blob: URLs which are temporary browser references
+      if (selectedImage.startsWith("blob:")) {
+        Alert.alert("Error", "This image format is not supported. Please try selecting the image again.");
+        setUploading(false);
+        return;
+      }
+
+      // Ensure it's a proper data URI
+      if (!selectedImage.startsWith("data:")) {
+        Alert.alert("Error", "Invalid image data. Please try selecting the image again.");
+        setUploading(false);
+        return;
+      }
+
       const tagsArray = tags
         .split(",")
         .map((t) => t.trim())

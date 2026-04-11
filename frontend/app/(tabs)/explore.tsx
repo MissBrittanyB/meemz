@@ -18,6 +18,7 @@ import axios from "axios";
 import { shareMemeAction, saveToDeviceAction, copyMemeAction } from "../../utils/memeActions";
 import { requireAuth } from "../../utils/authGate";
 import GradientText from "../../utils/GradientText";
+import { router } from "expo-router";
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || "";
 
@@ -248,12 +249,16 @@ export default function ExploreScreen() {
             </TouchableOpacity>
           </View>
           {item.username && (
-            <View style={styles.cardBottomRow}>
+            <TouchableOpacity
+              style={styles.cardBottomRow}
+              onPress={() => router.push(`/user/${encodeURIComponent(item.username!)}`)}
+            >
               <Ionicons name="person-circle-outline" size={14} color="#ccc" />
               <Text style={styles.usernameText} numberOfLines={1}>
                 @{item.username}
               </Text>
-            </View>
+              <Ionicons name="chevron-forward" size={12} color="#666" />
+            </TouchableOpacity>
           )}
         </View>
       </TouchableOpacity>
@@ -355,9 +360,17 @@ export default function ExploreScreen() {
                       </Text>
                     </View>
                     {selectedMeme.username && (
-                      <Text style={styles.modalUsername}>
-                        by @{selectedMeme.username}
-                      </Text>
+                      <TouchableOpacity
+                        onPress={() => {
+                          setSelectedMeme(null);
+                          setModalVisible(false);
+                          router.push(`/user/${encodeURIComponent(selectedMeme.username!)}`);
+                        }}
+                      >
+                        <Text style={[styles.modalUsername, { textDecorationLine: "underline" }]}>
+                          by @{selectedMeme.username}
+                        </Text>
+                      </TouchableOpacity>
                     )}
                   </View>
                 </View>
