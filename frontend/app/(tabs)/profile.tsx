@@ -51,7 +51,8 @@ interface User {
 interface Meme {
   id: string;
   name: string;
-  image_base64: string;
+  image_base64?: string;
+  thumbnail_base64?: string;
   category: string;
   is_public: boolean;
   media_type?: string;
@@ -64,6 +65,7 @@ export default function ProfileScreen() {
   const [token, setToken] = useState<string | null>(null);
   const [myMemes, setMyMemes] = useState<Meme[]>([]);
   const [selectedMeme, setSelectedMeme] = useState<Meme | null>(null);
+  const [fullMeme, setFullMeme] = useState<Meme | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   // Auth form states
@@ -742,11 +744,20 @@ export default function ProfileScreen() {
                 <TouchableOpacity
                   key={meme.id}
                   style={styles.memeItem}
-                  onPress={() => setSelectedMeme(meme)}
+                  onPress={async () => {
+                    setSelectedMeme(meme);
+                    setFullMeme(null);
+                    try {
+                      const res = await axios.get(`${API_URL}/api/memes/${meme.id}`, {
+                        headers: token ? { Authorization: `Bearer ${token}` } : {},
+                      });
+                      setFullMeme(res.data);
+                    } catch { setFullMeme(meme); }
+                  }}
                   activeOpacity={0.7}
                 >
                   <Image
-                    source={{ uri: meme.image_base64 }}
+                    source={{ uri: meme.thumbnail_base64 || meme.image_base64 || "" }}
                     style={styles.memeImage}
                     resizeMode="cover"
                   />
@@ -780,7 +791,7 @@ export default function ProfileScreen() {
 
                 <ScrollView showsVerticalScrollIndicator={false}>
                   <Image
-                    source={{ uri: selectedMeme.image_base64 }}
+                    source={{ uri: (fullMeme?.image_base64 || selectedMeme.thumbnail_base64 || selectedMeme.image_base64 || "") }}
                     style={styles.modalImage}
                     resizeMode="contain"
                   />
@@ -802,7 +813,7 @@ export default function ProfileScreen() {
                       style={[styles.modalActionBtn, actionLoading === "share" && { opacity: 0.6 }]}
                       onPress={async () => {
                         setActionLoading("share");
-                        try { await shareMemeAction(selectedMeme); } catch (e: any) { Alert.alert("Share Error", e?.message || "Failed"); }
+                        try { const m = fullMeme || selectedMeme; await shareMemeAction(m as any); } catch (e: any) { Alert.alert("Share Error", e?.message || "Failed"); }
                         setActionLoading(null);
                       }}
                       disabled={actionLoading !== null}
@@ -815,7 +826,7 @@ export default function ProfileScreen() {
                       style={[styles.modalActionBtn, actionLoading === "copy" && { opacity: 0.6 }]}
                       onPress={async () => {
                         setActionLoading("copy");
-                        try { await copyMemeAction(selectedMeme); } catch (e: any) { Alert.alert("Copy Error", e?.message || "Failed"); }
+                        try { const m = fullMeme || selectedMeme; await copyMemeAction(m as any); } catch (e: any) { Alert.alert("Copy Error", e?.message || "Failed"); }
                         setActionLoading(null);
                       }}
                       disabled={actionLoading !== null}
@@ -828,7 +839,7 @@ export default function ProfileScreen() {
                       style={[styles.modalActionBtn, actionLoading === "save" && { opacity: 0.6 }]}
                       onPress={async () => {
                         setActionLoading("save");
-                        try { await saveToDeviceAction(selectedMeme); } catch (e: any) { Alert.alert("Save Error", e?.message || "Failed"); }
+                        try { const m = fullMeme || selectedMeme; await saveToDeviceAction(m as any); } catch (e: any) { Alert.alert("Save Error", e?.message || "Failed"); }
                         setActionLoading(null);
                       }}
                       disabled={actionLoading !== null}

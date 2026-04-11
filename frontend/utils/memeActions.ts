@@ -139,21 +139,10 @@ export async function copyMemeAction(meme: MemeData): Promise<boolean> {
 
     // --- NATIVE: GIFs ---
     // iOS clipboard does NOT support animated GIFs (strips animation).
-    // Best approach: Convert to MP4, save to Camera Roll so user can
-    // attach the animated video from their Photos in any social app.
+    // Use the share sheet instead which preserves MP4 animation.
+    // This lets users send animated GIFs directly to any app.
     if (isGif(meme)) {
-      console.log("[memeActions] GIF detected - saving animated MP4 to Camera Roll");
-
-      // Request media library permission first
-      const { status } = await MediaLibrary.requestPermissionsAsync();
-      if (status !== "granted") {
-        Alert.alert(
-          "Permission Required",
-          "Please allow photo library access to save animated meemz.",
-          [{ text: "OK" }]
-        );
-        return false;
-      }
+      console.log("[memeActions] GIF detected for copy - using share sheet with MP4 for animation");
 
       const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || "";
 
@@ -178,17 +167,18 @@ export async function copyMemeAction(meme: MemeData): Promise<boolean> {
                 throw new Error("MP4 file too small or missing");
               }
 
-              // Save to Camera Roll
-              await MediaLibrary.createAssetAsync(mp4FileUri);
-              cleanupFile(mp4FileUri);
-
-              Alert.alert(
-                "Saved with Motion!",
-                "Animated meemz saved to your Camera Roll! Open any social app and attach it from your Photos for full animation.",
-                [{ text: "Got it!" }]
-              );
-              console.log("[memeActions] GIF saved as MP4 to Camera Roll!");
-              return true;
+              // Open share sheet so user can send animated GIF to any app
+              const isAvailable = await Sharing.isAvailableAsync();
+              if (isAvailable) {
+                await Sharing.shareAsync(mp4FileUri, {
+                  mimeType: "video/mp4",
+                  dialogTitle: "Send Meemz",
+                  UTI: "public.mpeg-4",
+                });
+                setTimeout(() => cleanupFile(mp4FileUri), 60000);
+                console.log("[memeActions] GIF copy via share sheet successful!");
+                return true;
+              }
             }
           }
         } catch (err: any) {
@@ -197,23 +187,25 @@ export async function copyMemeAction(meme: MemeData): Promise<boolean> {
         if (attempt < 3) await new Promise((r) => setTimeout(r, 1000));
       }
 
-      // Fallback: save original GIF to camera roll
-      console.log("[memeActions] MP4 conversion failed, saving original GIF to Camera Roll");
+      // Fallback: share original GIF
+      console.log("[memeActions] MP4 conversion failed, sharing original GIF");
       try {
         const fileUri = await writeToTempFile(meme);
-        await MediaLibrary.createAssetAsync(fileUri);
-        cleanupFile(fileUri);
-        Alert.alert(
-          "Saved!",
-          "Meemz saved to your Camera Roll. Attach it from your Photos in any social app. Note: some apps may not animate GIFs.",
-          [{ text: "Got it!" }]
-        );
-        return true;
+        const isAvailable = await Sharing.isAvailableAsync();
+        if (isAvailable) {
+          await Sharing.shareAsync(fileUri, {
+            mimeType: "image/gif",
+            dialogTitle: "Send Meemz",
+            UTI: "com.compuserve.gif",
+          });
+          setTimeout(() => cleanupFile(fileUri), 30000);
+          return true;
+        }
       } catch (fallbackErr: any) {
-        console.error("[memeActions] GIF save fallback failed:", fallbackErr?.message);
-        Alert.alert("Copy Issue", "Could not save animated meemz. Try using Share instead.");
-        return false;
+        console.error("[memeActions] GIF share fallback failed:", fallbackErr?.message);
       }
+      Alert.alert("Copy Issue", "Could not send animated meemz. Try using Share instead.");
+      return false;
     }
 
     // --- NATIVE: Videos ---
