@@ -1477,7 +1477,29 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def startup_event():
-    """Seed categories and generate thumbnails on startup"""
+    """Seed categories, ensure ffmpeg, and generate thumbnails on startup"""
+    # Ensure ffmpeg is installed (gets wiped on container restart)
+    import shutil
+    if not shutil.which("ffmpeg"):
+        logger.warning("ffmpeg not found! Installing...")
+        try:
+            result = subprocess.run(
+                ["apt-get", "update", "-qq"],
+                capture_output=True, text=True, timeout=60
+            )
+            result = subprocess.run(
+                ["apt-get", "install", "-y", "-qq", "ffmpeg"],
+                capture_output=True, text=True, timeout=120
+            )
+            if shutil.which("ffmpeg"):
+                logger.info("ffmpeg installed successfully!")
+            else:
+                logger.error("ffmpeg installation failed!")
+        except Exception as e:
+            logger.error(f"ffmpeg install error: {e}")
+    else:
+        logger.info("ffmpeg is available")
+
     logger.info("Seeding default categories...")
     default_categories = [
         {"name": "Reactions", "icon": "😂"},
