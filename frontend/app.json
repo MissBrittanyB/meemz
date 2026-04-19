@@ -9,14 +9,24 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "meemz needs access to your photo library to upload memes and GIFs you want to share with the community.",
+        "NSPhotoLibraryAddUsageDescription": "meemz saves animated memes to your camera roll so you can share them on social media with motion.",
+        "NSCameraUsageDescription": "meemz uses your camera to take photos for your profile picture or to create new memes."
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#0B0B0F"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "permissions": [
+        "READ_MEDIA_IMAGES",
+        "READ_MEDIA_VIDEO",
+        "CAMERA"
+      ]
     },
     "web": {
       "bundler": "metro",
