@@ -428,6 +428,47 @@ async def update_me(update_data: UserUpdate, current_user: dict = Depends(get_re
     
     return {"message": "Profile updated"}
 
+@api_router.delete("/auth/account")
+async def delete_account(current_user: dict = Depends(get_required_user)):
+    """Permanently delete user account and all associated data (Apple App Store requirement)"""
+    user_id = current_user["id"]
+    username = current_user.get("username", "unknown")
+    logger.info(f"Account deletion initiated for user: {username} ({user_id})")
+    
+    try:
+        # Delete all user's memes
+        meme_result = await db.memes.delete_many({"user_id": user_id})
+        logger.info(f"Deleted {meme_result.deleted_count} memes for user {username}")
+        
+        # Delete all follow relationships (both directions)
+        follows_result = await db.follows.delete_many({
+            "$or": [
+                {"follower_id": user_id},
+                {"followed_id": user_id}
+            ]
+        })
+        logger.info(f"Deleted {follows_result.deleted_count} follow relationships for user {username}")
+        
+        # Remove user from any favorites/recent lists (stored on other user docs)
+        # Clean up device-based data
+        await db.favorites.delete_many({"user_id": user_id})
+        await db.recent.delete_many({"user_id": user_id})
+        
+        # Delete the user account itself
+        await db.users.delete_one({"id": user_id})
+        logger.info(f"Account permanently deleted for user: {username} ({user_id})")
+        
+        return {
+            "message": "Account permanently deleted",
+            "deleted": {
+                "memes": meme_result.deleted_count,
+                "follows": follows_result.deleted_count,
+            }
+        }
+    except Exception as e:
+        logger.error(f"Account deletion failed for {username}: {e}")
+        raise HTTPException(status_code=500, detail="Account deletion failed. Please try again.")
+
 # ============ USER PROFILE ENDPOINTS ============
 
 @api_router.get("/users/{username}")

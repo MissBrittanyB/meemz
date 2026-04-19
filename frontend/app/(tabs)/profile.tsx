@@ -212,6 +212,56 @@ export default function ProfileScreen() {
     setMyMemes([]);
   };
 
+  const deleteAccount = () => {
+    Alert.alert(
+      "Delete Account",
+      "Are you sure you want to permanently delete your account? This will remove:\n\n• Your profile and personal data\n• All your uploaded meemz\n• Your followers and following\n• Your favorites and history\n\nThis action cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete My Account",
+          style: "destructive",
+          onPress: () => {
+            // Second confirmation
+            Alert.alert(
+              "Final Confirmation",
+              "Type DELETE to permanently remove your account. This cannot be reversed.",
+              [
+                { text: "Cancel", style: "cancel" },
+                {
+                  text: "Permanently Delete",
+                  style: "destructive",
+                  onPress: async () => {
+                    try {
+                      await axios.delete(`${API_URL}/api/auth/account`, {
+                        headers: { Authorization: `Bearer ${token}` },
+                      });
+                      // Clear all local data
+                      await AsyncStorage.removeItem("memevault_token");
+                      await AsyncStorage.removeItem("memevault_device_id");
+                      setToken(null);
+                      setUser(null);
+                      setIsLoggedIn(false);
+                      setMyMemes([]);
+                      Alert.alert(
+                        "Account Deleted",
+                        "Your account and all associated data have been permanently deleted.",
+                        [{ text: "OK" }]
+                      );
+                    } catch (error: any) {
+                      const msg = error?.response?.data?.detail || "Failed to delete account. Please try again.";
+                      Alert.alert("Error", msg);
+                    }
+                  },
+                },
+              ]
+            );
+          },
+        },
+      ]
+    );
+  };
+
   const pickProfileImage = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== "granted") {
@@ -770,6 +820,24 @@ export default function ProfileScreen() {
               ))}
             </View>
           )}
+        </View>
+
+        {/* Account Management Section */}
+        <View style={styles.dangerSection}>
+          <Text style={styles.dangerSectionTitle}>Account</Text>
+          <TouchableOpacity
+            style={styles.deleteAccountButton}
+            onPress={deleteAccount}
+          >
+            <Ionicons name="trash-outline" size={20} color="#E74C3C" />
+            <View style={{ flex: 1, marginLeft: 12 }}>
+              <Text style={styles.deleteAccountText}>Delete Account</Text>
+              <Text style={styles.deleteAccountSubtext}>
+                Permanently remove your account and all data
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color="#666" />
+          </TouchableOpacity>
         </View>
 
         {/* Meme Detail Modal */}
@@ -1362,5 +1430,41 @@ const styles = StyleSheet.create({
     color: "#EAEAF0",
     fontSize: 12,
     marginTop: 4,
+  },
+  // Account deletion section
+  dangerSection: {
+    marginTop: 24,
+    marginHorizontal: 16,
+    marginBottom: 40,
+    borderTopWidth: 1,
+    borderTopColor: "#1E1E24",
+    paddingTop: 20,
+  },
+  dangerSectionTitle: {
+    color: "#888",
+    fontSize: 12,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 1,
+    marginBottom: 12,
+  },
+  deleteAccountButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(231, 76, 60, 0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(231, 76, 60, 0.2)",
+    borderRadius: 12,
+    padding: 16,
+  },
+  deleteAccountText: {
+    color: "#E74C3C",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  deleteAccountSubtext: {
+    color: "#888",
+    fontSize: 12,
+    marginTop: 2,
   },
 });
