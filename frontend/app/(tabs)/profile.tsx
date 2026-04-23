@@ -18,6 +18,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as WebBrowser from "expo-web-browser";
 import axios from "axios";
 import { shareMemeAction, saveToDeviceAction, copyMemeAction } from "../../utils/memeActions";
 import * as ImagePicker from "expo-image-picker";
@@ -825,8 +826,33 @@ export default function ProfileScreen() {
         {/* Account Management Section */}
         <View style={styles.dangerSection}>
           <Text style={styles.dangerSectionTitle}>Account</Text>
+
           <TouchableOpacity
-            style={styles.deleteAccountButton}
+            style={styles.settingsRow}
+            onPress={async () => {
+              const url = `${API_URL}/api/privacy-policy`;
+              await WebBrowser.openBrowserAsync(url);
+            }}
+          >
+            <Ionicons name="shield-checkmark-outline" size={20} color="#888" />
+            <Text style={styles.settingsRowText}>Privacy Policy</Text>
+            <Ionicons name="chevron-forward" size={20} color="#666" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.settingsRow}
+            onPress={async () => {
+              const url = `${API_URL}/api/terms-of-service`;
+              await WebBrowser.openBrowserAsync(url);
+            }}
+          >
+            <Ionicons name="document-text-outline" size={20} color="#888" />
+            <Text style={styles.settingsRowText}>Terms of Service</Text>
+            <Ionicons name="chevron-forward" size={20} color="#666" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.deleteAccountButton, { marginTop: 16 }]}
             onPress={deleteAccount}
           >
             <Ionicons name="trash-outline" size={20} color="#E74C3C" />
@@ -1466,5 +1492,19 @@ const styles = StyleSheet.create({
     color: "#888",
     fontSize: 12,
     marginTop: 2,
+  },
+  settingsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#15151A",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 8,
+    gap: 12,
+  },
+  settingsRowText: {
+    flex: 1,
+    color: "#EAEAF0",
+    fontSize: 15,
   },
 });
