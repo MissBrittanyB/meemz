@@ -35,6 +35,7 @@
     },
     "plugins": [
       "expo-router",
+      "expo-iap",
       [
         "expo-splash-screen",
         {
@@ -43,7 +44,8 @@
           "resizeMode": "contain",
           "backgroundColor": "#0B0B0F"
         }
-      ]
+      ],
+      "expo-iap"
     ],
     "experiments": {
       "typedRoutes": true

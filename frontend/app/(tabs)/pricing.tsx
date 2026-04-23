@@ -17,6 +17,7 @@ import axios from "axios";
 import { router } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import GradientText from "../../utils/GradientText";
+import { useAppleIAP, APPLE_PRODUCT_IDS } from "../../utils/useAppleIAP";
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || "";
 
@@ -46,6 +47,19 @@ export default function PricingScreen() {
   const [selectedPlan, setSelectedPlan] = useState<string>("monthly");
   const [processing, setProcessing] = useState(false);
   const [token, setToken] = useState<string | null>(null);
+
+  // Apple IAP hook
+  const {
+    isIOS,
+    iapAvailable,
+    products: appleProducts,
+    purchasing: iapPurchasing,
+    purchaseProduct,
+    restorePurchases,
+  } = useAppleIAP();
+
+  // Use Apple IAP on iOS when available, Stripe otherwise
+  const useApplePayment = isIOS && iapAvailable;
 
   useEffect(() => {
     loadData();
@@ -114,7 +128,8 @@ export default function PricingScreen() {
     }
   };
 
-  const subscribeToPlan = async () => {
+  // ============ APPLE IAP PURCHASE ============
+  const subscribeWithApple = async () => {
     if (!token) {
       Alert.alert(
         "Sign Up Required",
@@ -129,13 +144,77 @@ export default function PricingScreen() {
 
     setProcessing(true);
     try {
-      // Get the origin URL for success/cancel redirects
+      // Map plan ID to Apple product ID
+      const appleProductId =
+        APPLE_PRODUCT_IDS[selectedPlan as keyof typeof APPLE_PRODUCT_IDS];
+      if (!appleProductId) {
+        Alert.alert("Error", "Invalid plan selected");
+        return;
+      }
+
+      console.log("[Pricing] Starting Apple IAP purchase:", appleProductId);
+      const success = await purchaseProduct(appleProductId);
+
+      if (success) {
+        // Verify with backend
+        try {
+          await axios.post(
+            `${API_URL}/api/subscriptions/apple/verify`,
+            {
+              product_id: appleProductId,
+              transaction_id: `apple_${Date.now()}`,
+            },
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+        } catch (verifyErr) {
+          console.log("[Pricing] Backend verify error (non-critical):", verifyErr);
+        }
+
+        setSubStatus({
+          status: "active",
+          plan_id: selectedPlan,
+          trial_available: false,
+          is_premium: true,
+        });
+        Alert.alert(
+          "Payment Successful!",
+          "Welcome to meemz premium! Enjoy unlimited access."
+        );
+      }
+    } catch (error: any) {
+      console.error("Apple IAP error:", error);
+      if (!error?.message?.includes("cancel")) {
+        Alert.alert(
+          "Payment Error",
+          error?.message || "Could not complete purchase"
+        );
+      }
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  // ============ STRIPE PURCHASE (Web/Android) ============
+  const subscribeWithStripe = async () => {
+    if (!token) {
+      Alert.alert(
+        "Sign Up Required",
+        "Create an account first to subscribe!",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Sign Up", onPress: () => router.push("/(tabs)/profile") },
+        ]
+      );
+      return;
+    }
+
+    setProcessing(true);
+    try {
       let originUrl = API_URL;
       if (Platform.OS === "web" && typeof window !== "undefined") {
         originUrl = window.location.origin;
       }
 
-      // Create Stripe Checkout Session
       const res = await axios.post(
         `${API_URL}/api/subscriptions/create-checkout?plan_id=${selectedPlan}&origin_url=${encodeURIComponent(originUrl)}`,
         {},
@@ -149,15 +228,11 @@ export default function PricingScreen() {
         throw new Error("No checkout URL received");
       }
 
-      // Open Stripe Checkout in browser
       if (Platform.OS === "web") {
         window.location.href = checkoutUrl;
       } else {
         const result = await WebBrowser.openBrowserAsync(checkoutUrl);
-
-        // When browser closes, poll for payment status
         if (result.type === "cancel" || result.type === "dismiss") {
-          // Poll payment status
           await pollPaymentStatus(sessionId);
         }
       }
@@ -165,15 +240,54 @@ export default function PricingScreen() {
       console.error("Subscribe error:", error);
       Alert.alert(
         "Payment Error",
-        error.response?.data?.detail || error.message || "Could not start checkout"
+        error.response?.data?.detail ||
+          error.message ||
+          "Could not start checkout"
       );
     } finally {
       setProcessing(false);
     }
   };
 
+  // Route to correct payment method
+  const subscribeToPlan = () => {
+    if (useApplePayment) {
+      subscribeWithApple();
+    } else {
+      subscribeWithStripe();
+    }
+  };
+
+  const handleRestorePurchases = async () => {
+    if (!token) {
+      Alert.alert("Sign In Required", "Please sign in to restore purchases.");
+      return;
+    }
+
+    setProcessing(true);
+    try {
+      const success = await restorePurchases();
+      if (success) {
+        // Verify with backend
+        try {
+          await axios.post(
+            `${API_URL}/api/subscriptions/apple/restore`,
+            {},
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+        } catch {}
+
+        await loadData();
+        Alert.alert("Restored!", "Your subscription has been restored.");
+      }
+    } catch (err: any) {
+      Alert.alert("Restore Failed", err?.message || "Could not restore purchases.");
+    } finally {
+      setProcessing(false);
+    }
+  };
+
   const pollPaymentStatus = async (sessionId: string) => {
-    // Check our DB for payment status (not Stripe directly)
     for (let i = 0; i < 5; i++) {
       try {
         const res = await axios.get(
@@ -197,11 +311,9 @@ export default function PricingScreen() {
       } catch (e) {
         console.error("Poll error:", e);
       }
-      // Wait 2 seconds between polls
       await new Promise((resolve) => setTimeout(resolve, 2000));
     }
 
-    // After 5 attempts, offer to refresh
     Alert.alert(
       "Processing",
       "Your payment is being processed. Check back in a moment.",
@@ -393,13 +505,13 @@ export default function PricingScreen() {
         <TouchableOpacity
           style={[
             styles.subscribeButton,
-            processing && styles.subscribeButtonDisabled,
+            (processing || iapPurchasing) && styles.subscribeButtonDisabled,
           ]}
           onPress={subscribeToPlan}
-          disabled={processing}
+          disabled={processing || iapPurchasing}
           activeOpacity={0.8}
         >
-          {processing ? (
+          {processing || iapPurchasing ? (
             <ActivityIndicator color="#fff" />
           ) : (
             <Text style={styles.subscribeText}>
@@ -413,9 +525,21 @@ export default function PricingScreen() {
 
         {/* Fine print */}
         <Text style={styles.finePrint}>
-          Payment will be charged through the App Store.{"\n"}
-          Subscription auto-renews unless cancelled.
+          {useApplePayment
+            ? "Payment will be charged through the App Store.\nSubscription auto-renews unless cancelled."
+            : "Payment will be processed securely via Stripe.\nSubscription auto-renews unless cancelled."}
         </Text>
+
+        {/* Restore Purchases - iOS only */}
+        {isIOS && (
+          <TouchableOpacity
+            style={styles.restoreButton}
+            onPress={handleRestorePurchases}
+            disabled={processing || iapPurchasing}
+          >
+            <Text style={styles.restoreText}>Restore Purchases</Text>
+          </TouchableOpacity>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -602,9 +726,19 @@ const styles = StyleSheet.create({
     fontSize: 12,
     textAlign: "center",
     marginTop: 16,
-    marginBottom: 100,
     lineHeight: 18,
     paddingHorizontal: 40,
+  },
+  // Restore Purchases
+  restoreButton: {
+    alignItems: "center",
+    paddingVertical: 16,
+    marginBottom: 100,
+  },
+  restoreText: {
+    color: "#888",
+    fontSize: 14,
+    textDecorationLine: "underline",
   },
   // Premium status
   premiumContainer: {

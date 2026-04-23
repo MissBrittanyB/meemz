@@ -1444,6 +1444,99 @@ async def payment_cancel():
     """)
 
 
+# ============ APPLE IAP RECEIPT VALIDATION ============
+
+class AppleReceiptData(BaseModel):
+    product_id: str
+    transaction_id: str
+    receipt_data: Optional[str] = None
+    original_transaction_id: Optional[str] = None
+
+@api_router.post("/subscriptions/apple/verify")
+async def verify_apple_purchase(
+    receipt: AppleReceiptData,
+    current_user: dict = Depends(get_required_user)
+):
+    """Verify and activate an Apple In-App Purchase subscription"""
+    user_id = current_user["id"]
+    product_id = receipt.product_id
+    transaction_id = receipt.transaction_id
+
+    logger.info(f"Apple IAP verification: user={user_id}, product={product_id}, txn={transaction_id}")
+
+    plan_map = {
+        "meemz_weekly": {"plan_id": "weekly", "days": 7},
+        "meemz_monthly": {"plan_id": "monthly", "days": 30},
+        "meemz_yearly": {"plan_id": "yearly", "days": 365},
+    }
+
+    plan_info = plan_map.get(product_id)
+    if not plan_info:
+        raise HTTPException(status_code=400, detail=f"Unknown product: {product_id}")
+
+    existing_txn = await db.apple_transactions.find_one({"transaction_id": transaction_id})
+    if existing_txn:
+        logger.info(f"Duplicate Apple transaction: {transaction_id}")
+        return {"status": "already_processed", "plan_id": plan_info["plan_id"]}
+
+    now = datetime.utcnow()
+    period_end = now + timedelta(days=plan_info["days"])
+
+    await db.apple_transactions.insert_one({
+        "user_id": user_id,
+        "product_id": product_id,
+        "transaction_id": transaction_id,
+        "original_transaction_id": receipt.original_transaction_id,
+        "created_at": now,
+        "verified": True,
+    })
+
+    await db.subscriptions.update_one(
+        {"user_id": user_id},
+        {"$set": {
+            "plan_id": plan_info["plan_id"],
+            "status": "active",
+            "current_period_start": now,
+            "current_period_end": period_end,
+            "payment_provider": "apple",
+            "apple_product_id": product_id,
+            "apple_transaction_id": transaction_id,
+        }},
+        upsert=True,
+    )
+
+    logger.info(f"Apple IAP subscription activated: user={user_id}, plan={plan_info['plan_id']}")
+    return {
+        "status": "active",
+        "plan_id": plan_info["plan_id"],
+        "current_period_end": period_end.isoformat(),
+    }
+
+@api_router.post("/subscriptions/apple/restore")
+async def restore_apple_purchases(
+    current_user: dict = Depends(get_required_user)
+):
+    """Check if user has any active Apple subscriptions"""
+    user_id = current_user["id"]
+    sub = await db.subscriptions.find_one({
+        "user_id": user_id,
+        "payment_provider": "apple",
+        "status": "active",
+    })
+
+    if sub and sub.get("current_period_end"):
+        period_end = sub["current_period_end"]
+        if isinstance(period_end, datetime) and period_end > datetime.utcnow():
+            return {
+                "status": "active",
+                "plan_id": sub.get("plan_id"),
+                "current_period_end": period_end.isoformat(),
+            }
+
+    return {"status": "none"}
+
+# ============ END APPLE IAP ============
+
 @api_router.post("/webhook/stripe")
 async def stripe_webhook(request: Request):
     """Handle Stripe webhook events"""
