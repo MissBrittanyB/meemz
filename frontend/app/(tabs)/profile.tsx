@@ -830,7 +830,7 @@ export default function ProfileScreen() {
           <TouchableOpacity
             style={styles.settingsRow}
             onPress={async () => {
-              const url = `${API_URL}/api/privacy-policy`;
+              const url = "https://meemzai.com/privacy";
               await WebBrowser.openBrowserAsync(url);
             }}
           >
