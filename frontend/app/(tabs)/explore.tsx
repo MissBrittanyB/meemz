@@ -369,6 +369,7 @@ export default function ExploreScreen() {
               <Ionicons name="close-circle" size={32} color="#fff" />
             </TouchableOpacity>
 
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ alignItems: "center", paddingBottom: 16 }}>
             {selectedMeme && (
               <>
                 <Image
@@ -520,6 +521,7 @@ export default function ExploreScreen() {
                 </View>
               </>
             )}
+            </ScrollView>
           </View>
         </View>
       </Modal>

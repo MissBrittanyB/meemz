@@ -506,6 +506,7 @@ export default function MemesScreen() {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ alignItems: "center", paddingBottom: 16 }}>
             {selectedMeme && (
               <>
                 <TouchableOpacity
@@ -686,6 +687,7 @@ export default function MemesScreen() {
                 </View>
               </>
             )}
+            </ScrollView>
           </View>
         </View>
       </Modal>
