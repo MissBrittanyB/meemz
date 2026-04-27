@@ -526,9 +526,24 @@ export default function PricingScreen() {
         {/* Fine print */}
         <Text style={styles.finePrint}>
           {useApplePayment
-            ? "Payment will be charged through the App Store.\nSubscription auto-renews unless cancelled."
+            ? "Payment will be charged through the App Store.\nSubscription auto-renews unless cancelled at least 24 hours before the end of the current period. Manage subscriptions in Settings → Apple ID → Subscriptions."
             : "Payment will be processed securely via Stripe.\nSubscription auto-renews unless cancelled."}
         </Text>
+
+        {/* Legal Links - Required by Apple 3.1.2(c) */}
+        <View style={styles.legalLinks}>
+          <TouchableOpacity
+            onPress={() => WebBrowser.openBrowserAsync("https://meemzai.com/privacy")}
+          >
+            <Text style={styles.legalLinkText}>Privacy Policy</Text>
+          </TouchableOpacity>
+          <Text style={styles.legalSeparator}>|</Text>
+          <TouchableOpacity
+            onPress={() => WebBrowser.openBrowserAsync(`${API_URL}/api/terms-of-service`)}
+          >
+            <Text style={styles.legalLinkText}>Terms of Use (EULA)</Text>
+          </TouchableOpacity>
+        </View>
 
         {/* Restore Purchases - iOS only */}
         {isIOS && (
@@ -739,6 +754,23 @@ const styles = StyleSheet.create({
     color: "#888",
     fontSize: 14,
     textDecorationLine: "underline",
+  },
+  legalLinks: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 12,
+    marginBottom: 8,
+    gap: 8,
+  },
+  legalLinkText: {
+    color: "#888",
+    fontSize: 13,
+    textDecorationLine: "underline",
+  },
+  legalSeparator: {
+    color: "#444",
+    fontSize: 13,
   },
   // Premium status
   premiumContainer: {
