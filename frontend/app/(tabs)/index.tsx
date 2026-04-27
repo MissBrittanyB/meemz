@@ -66,15 +66,43 @@ export default function MemesScreen() {
   const [favorites, setFavorites] = useState<string[]>([]);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [token, setToken] = useState<string | null>(null);
 
-  // Check admin status
+  // Report content
+  const reportMeme = async (meme: Meme, reason: string) => {
+    try {
+      const t = token || await AsyncStorage.getItem("memevault_token");
+      await axios.post(`${API_URL}/api/reports`, {
+        content_id: meme.id, content_type: "meme", reason,
+      }, { headers: { Authorization: `Bearer ${t}` } });
+      Alert.alert("Reported", "Thank you. We will review this content within 24 hours.");
+    } catch { Alert.alert("Error", "Could not submit report. Please try again."); }
+  };
+
+  // Block user
+  const blockUser = async (username: string) => {
+    try {
+      const t = token || await AsyncStorage.getItem("memevault_token");
+      await axios.post(`${API_URL}/api/users/${username}/block`, {}, {
+        headers: { Authorization: `Bearer ${t}` },
+      });
+      Alert.alert("User Blocked", `@${username} has been blocked. Their content will no longer appear in your feed.`);
+      setSelectedMeme(null);
+      setFullMeme(null);
+      // Refresh feed to remove blocked user's content
+      loadMemes(true);
+    } catch { Alert.alert("Error", "Could not block user. Please try again."); }
+  };
+
+  // Check admin status and set token
   useEffect(() => {
     const checkAdmin = async () => {
       try {
-        const token = await AsyncStorage.getItem("memevault_token");
-        if (!token) return;
+        const storedToken = await AsyncStorage.getItem("memevault_token");
+        if (!storedToken) return;
+        setToken(storedToken);
         const res = await axios.get(`${API_URL}/api/auth/me`, {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: { Authorization: `Bearer ${storedToken}` },
         });
         setIsAdmin(res.data?.is_admin === true);
       } catch { /* not logged in */ }
@@ -609,6 +637,50 @@ export default function MemesScreen() {
                     >
                       <Ionicons name="trash-outline" size={24} color="#E74C3C" />
                       <Text style={[styles.actionButtonText, { color: "#E74C3C" }]}>Delete</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+
+                {/* Report & Block - Apple Guideline 1.2 */}
+                <View style={{ flexDirection: "row", justifyContent: "center", gap: 24, marginTop: 16, paddingBottom: 8 }}>
+                  <TouchableOpacity
+                    style={{ flexDirection: "row", alignItems: "center", gap: 6 }}
+                    onPress={() => {
+                      if (!token) { Alert.alert("Sign In Required", "Please sign in to report content."); return; }
+                      Alert.alert(
+                        "Report Content",
+                        "Why are you reporting this meemz?",
+                        [
+                          { text: "Cancel", style: "cancel" },
+                          { text: "Objectionable", onPress: () => reportMeme(selectedMeme, "objectionable") },
+                          { text: "Spam", onPress: () => reportMeme(selectedMeme, "spam") },
+                          { text: "Harassment", onPress: () => reportMeme(selectedMeme, "harassment") },
+                          { text: "Copyright", onPress: () => reportMeme(selectedMeme, "copyright") },
+                        ]
+                      );
+                    }}
+                  >
+                    <Ionicons name="flag-outline" size={18} color="#888" />
+                    <Text style={{ color: "#888", fontSize: 13 }}>Report</Text>
+                  </TouchableOpacity>
+
+                  {selectedMeme.username && (
+                    <TouchableOpacity
+                      style={{ flexDirection: "row", alignItems: "center", gap: 6 }}
+                      onPress={() => {
+                        if (!token) { Alert.alert("Sign In Required", "Please sign in to block users."); return; }
+                        Alert.alert(
+                          "Block @" + selectedMeme.username,
+                          "Their content will be removed from your feed. This also notifies our team for review.",
+                          [
+                            { text: "Cancel", style: "cancel" },
+                            { text: "Block User", style: "destructive", onPress: () => blockUser(selectedMeme.username!) },
+                          ]
+                        );
+                      }}
+                    >
+                      <Ionicons name="ban-outline" size={18} color="#888" />
+                      <Text style={{ color: "#888", fontSize: 13 }}>Block User</Text>
                     </TouchableOpacity>
                   )}
                 </View>

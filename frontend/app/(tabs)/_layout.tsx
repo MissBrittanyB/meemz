@@ -1,9 +1,11 @@
 import { Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { View, StyleSheet, Platform } from "react-native";
+import EULAGate from "../../components/EULAGate";
 
 export default function TabLayout() {
   return (
+    <EULAGate>
     <Tabs
       screenOptions={{
         headerShown: false,
@@ -88,6 +90,7 @@ export default function TabLayout() {
         }}
       />
     </Tabs>
+    </EULAGate>
   );
 }
 

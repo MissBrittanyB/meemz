@@ -610,6 +610,7 @@ async def delete_category(category_id: str):
 
 @api_router.get("/memes", response_model=List[MemeListItem])
 async def get_memes(
+    request: Request,
     search: Optional[str] = None,
     category: Optional[str] = None,
     limit: int = 20,
@@ -630,6 +631,23 @@ async def get_memes(
     
     if category and category != "All":
         query["category"] = category
+    
+    # Exclude blocked users' content
+    blocked_user_ids = []
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        try:
+            token = auth_header.split(" ")[1]
+            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+            user_id = payload.get("sub")
+            if user_id:
+                blocked = await db.blocked_users.find({"blocker_id": user_id}).to_list(500)
+                blocked_user_ids = [b["blocked_id"] for b in blocked]
+        except Exception:
+            pass
+    
+    if blocked_user_ids:
+        query["user_id"] = {"$nin": blocked_user_ids}
     
     # Exclude full image_base64 from list queries for performance
     projection = {
@@ -1597,6 +1615,122 @@ async def stripe_webhook(request: Request):
     except Exception as e:
         logger.error(f"Webhook error: {str(e)}")
         return {"status": "error", "message": str(e)}
+
+# ============ CONTENT MODERATION (Apple Guideline 1.2) ============
+
+class ReportContent(BaseModel):
+    content_id: str  # meme ID or user ID
+    content_type: str  # "meme" or "user"
+    reason: str  # "objectionable", "spam", "harassment", "copyright", "other"
+    description: Optional[str] = None
+
+class BlockUser(BaseModel):
+    reason: Optional[str] = None
+
+@api_router.post("/reports")
+async def report_content(
+    report: ReportContent,
+    current_user: dict = Depends(get_required_user)
+):
+    """Report objectionable content or abusive user"""
+    now = datetime.utcnow()
+    report_doc = {
+        "id": str(uuid.uuid4()),
+        "reporter_id": current_user["id"],
+        "reporter_email": current_user.get("email"),
+        "content_id": report.content_id,
+        "content_type": report.content_type,
+        "reason": report.reason,
+        "description": report.description,
+        "status": "pending",  # pending, reviewed, resolved, dismissed
+        "created_at": now,
+    }
+    await db.reports.insert_one(report_doc)
+    logger.warning(f"CONTENT REPORT: type={report.content_type}, id={report.content_id}, reason={report.reason}, reporter={current_user['email']}")
+    return {"message": "Report submitted. We will review within 24 hours.", "report_id": report_doc["id"]}
+
+@api_router.get("/reports")
+async def get_reports(current_user: dict = Depends(get_required_user)):
+    """Get all reports (admin only)"""
+    if not current_user.get("is_admin"):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    reports = await db.reports.find().sort("created_at", -1).to_list(100)
+    for r in reports:
+        r.pop("_id", None)
+    return reports
+
+@api_router.post("/users/{username}/block")
+async def block_user(
+    username: str,
+    current_user: dict = Depends(get_required_user)
+):
+    """Block a user - removes their content from your feed"""
+    target_user = await db.users.find_one({"username": username.strip().lower()})
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if target_user["id"] == current_user["id"]:
+        raise HTTPException(status_code=400, detail="Cannot block yourself")
+
+    existing = await db.blocked_users.find_one({
+        "blocker_id": current_user["id"],
+        "blocked_id": target_user["id"]
+    })
+    if existing:
+        return {"message": "User already blocked"}
+
+    await db.blocked_users.insert_one({
+        "blocker_id": current_user["id"],
+        "blocked_id": target_user["id"],
+        "blocked_username": username.strip().lower(),
+        "created_at": datetime.utcnow(),
+    })
+
+    # Auto-report for developer notification
+    await db.reports.insert_one({
+        "id": str(uuid.uuid4()),
+        "reporter_id": current_user["id"],
+        "reporter_email": current_user.get("email"),
+        "content_id": target_user["id"],
+        "content_type": "user_blocked",
+        "reason": "blocked_by_user",
+        "description": f"User {current_user.get('username')} blocked {username}",
+        "status": "pending",
+        "created_at": datetime.utcnow(),
+    })
+
+    logger.warning(f"USER BLOCKED: {current_user.get('username')} blocked {username}")
+    return {"message": f"@{username} has been blocked. Their content will no longer appear in your feed."}
+
+@api_router.delete("/users/{username}/block")
+async def unblock_user(
+    username: str,
+    current_user: dict = Depends(get_required_user)
+):
+    """Unblock a user"""
+    result = await db.blocked_users.delete_one({
+        "blocker_id": current_user["id"],
+        "blocked_username": username.strip().lower()
+    })
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="User was not blocked")
+    return {"message": f"@{username} has been unblocked"}
+
+@api_router.get("/users/blocked/list")
+async def get_blocked_users(current_user: dict = Depends(get_required_user)):
+    """Get list of blocked users"""
+    blocked = await db.blocked_users.find({"blocker_id": current_user["id"]}).to_list(500)
+    return [{"username": b["blocked_username"], "blocked_at": b["created_at"]} for b in blocked]
+
+@api_router.post("/auth/accept-terms")
+async def accept_terms(current_user: dict = Depends(get_required_user)):
+    """Record that user has accepted the Terms of Use / EULA"""
+    await db.users.update_one(
+        {"id": current_user["id"]},
+        {"$set": {"terms_accepted": True, "terms_accepted_at": datetime.utcnow()}}
+    )
+    return {"message": "Terms accepted"}
+
+# ============ END CONTENT MODERATION ============
 
 # ============ LEGAL PAGES ============
 
