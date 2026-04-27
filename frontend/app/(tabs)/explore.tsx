@@ -480,42 +480,42 @@ export default function ExploreScreen() {
                 </View>
 
                 {/* Report & Block - Apple Guideline 1.2 */}
-                <View style={{ flexDirection: "row", justifyContent: "center", gap: 24, marginTop: 16, paddingBottom: 8 }}>
+                <View style={{ flexDirection: "row", justifyContent: "center", gap: 16, marginTop: 20, paddingBottom: 16, width: "100%" }}>
                   <TouchableOpacity
-                    style={{ flexDirection: "row", alignItems: "center", gap: 6 }}
+                    style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#1E1E24", borderRadius: 10, paddingVertical: 12, paddingHorizontal: 20 }}
                     onPress={() => {
                       Alert.alert(
                         "Report Content",
-                        "Why are you reporting this meemz?",
+                        "Report this meemz as objectionable, spam, or inappropriate?",
                         [
                           { text: "Cancel", style: "cancel" },
-                          { text: "Objectionable", onPress: () => reportMeme(selectedMeme, "objectionable") },
-                          { text: "Spam", onPress: () => reportMeme(selectedMeme, "spam") },
-                          { text: "Harassment", onPress: () => reportMeme(selectedMeme, "harassment") },
+                          { text: "Report", style: "destructive", onPress: () => reportMeme(selectedMeme, "objectionable") },
                         ]
                       );
                     }}
+                    activeOpacity={0.6}
                   >
-                    <Ionicons name="flag-outline" size={18} color="#888" />
-                    <Text style={{ color: "#888", fontSize: 13 }}>Report</Text>
+                    <Ionicons name="flag-outline" size={18} color="#E74C3C" />
+                    <Text style={{ color: "#E74C3C", fontSize: 14, fontWeight: "600" }}>Report</Text>
                   </TouchableOpacity>
 
                   {selectedMeme.username && (
                     <TouchableOpacity
-                      style={{ flexDirection: "row", alignItems: "center", gap: 6 }}
+                      style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#1E1E24", borderRadius: 10, paddingVertical: 12, paddingHorizontal: 20 }}
                       onPress={() => {
                         Alert.alert(
                           "Block @" + selectedMeme.username,
                           "Their content will be removed from your feed. This also notifies our team for review.",
                           [
                             { text: "Cancel", style: "cancel" },
-                            { text: "Block User", style: "destructive", onPress: () => blockUser(selectedMeme.username!) },
+                            { text: "Block", style: "destructive", onPress: () => blockUser(selectedMeme.username!) },
                           ]
                         );
                       }}
+                      activeOpacity={0.6}
                     >
-                      <Ionicons name="ban-outline" size={18} color="#888" />
-                      <Text style={{ color: "#888", fontSize: 13 }}>Block User</Text>
+                      <Ionicons name="ban-outline" size={18} color="#E74C3C" />
+                      <Text style={{ color: "#E74C3C", fontSize: 14, fontWeight: "600" }}>Block User</Text>
                     </TouchableOpacity>
                   )}
                 </View>
