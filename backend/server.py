@@ -1484,8 +1484,8 @@ async def verify_apple_purchase(
 
     plan_map = {
         "meemz_weekly": {"plan_id": "weekly", "days": 7},
-        "meemz_monthly": {"plan_id": "monthly", "days": 30},
-        "meemz_yearly": {"plan_id": "yearly", "days": 365},
+        "meemz_Monthly": {"plan_id": "monthly", "days": 30},
+        "memo_Yearly": {"plan_id": "yearly", "days": 365},
     }
 
     plan_info = plan_map.get(product_id)

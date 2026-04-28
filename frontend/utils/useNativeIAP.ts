@@ -5,7 +5,7 @@
 export const PLAN_TO_PRODUCT: Record<string, string> = {
   weekly: "meemz_weekly",
   monthly: "meemz_Monthly",
-  yearly: "meemz_yearly",
+  yearly: "memo_Yearly",
 };
 
 export function useNativeIAP() {

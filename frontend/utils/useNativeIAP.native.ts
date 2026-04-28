@@ -9,10 +9,10 @@ import { initConnection, endConnection, getSubscriptions, requestSubscription, g
 export const PLAN_TO_PRODUCT: Record<string, string> = {
   weekly: "meemz_weekly",
   monthly: "meemz_Monthly",
-  yearly: "meemz_yearly",
+  yearly: "memo_Yearly",
 };
 
-const IAP_SKUS = ["meemz_weekly", "meemz_Monthly", "meemz_yearly"];
+const IAP_SKUS = ["meemz_weekly", "meemz_Monthly", "memo_Yearly"];
 
 export function useNativeIAP() {
   const [available, setAvailable] = useState(false);
