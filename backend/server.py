@@ -1812,16 +1812,16 @@ async def startup_event():
     logger.info("Categories seeded!")
     
     # Ensure Apple Review demo account exists
-    demo_email = "applereview@meemz.app"
+    demo_email = "meemzreview@gmail.com"
     existing_demo = await db.users.find_one({"email": demo_email})
     if not existing_demo:
-        demo_password = pwd_context.hash("Meemz2026Review!")
+        demo_password = pwd_context.hash("Meemz2026!")
         demo_user = {
             "id": str(uuid.uuid4()),
             "email": demo_email,
-            "username": "applereview",
+            "username": "meemzreview",
             "password": demo_password,
-            "display_name": "Apple Review",
+            "display_name": "meemzreview",
             "avatar": None,
             "bio": None,
             "profile_image": None,
