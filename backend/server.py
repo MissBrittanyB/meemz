@@ -1811,6 +1811,30 @@ async def startup_event():
             await db.categories.insert_one(cat_obj.dict())
     logger.info("Categories seeded!")
     
+    # Ensure Apple Review demo account exists
+    demo_email = "applereview@meemz.app"
+    existing_demo = await db.users.find_one({"email": demo_email})
+    if not existing_demo:
+        demo_password = pwd_context.hash("Meemz2026Review!")
+        demo_user = {
+            "id": str(uuid.uuid4()),
+            "email": demo_email,
+            "username": "applereview",
+            "password": demo_password,
+            "display_name": "Apple Review",
+            "avatar": None,
+            "bio": None,
+            "profile_image": None,
+            "social_links": {},
+            "is_admin": False,
+            "terms_accepted": True,
+            "created_at": datetime.utcnow(),
+        }
+        await db.users.insert_one(demo_user)
+        logger.info("Apple Review demo account created")
+    else:
+        logger.info("Apple Review demo account exists")
+
     # Generate thumbnails for memes that don't have one yet
     missing_thumb_count = await db.memes.count_documents({
         "$or": [
