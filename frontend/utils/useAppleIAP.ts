@@ -112,8 +112,13 @@ export function useAppleIAP(): UseAppleIAPReturn {
   const purchaseProduct = useCallback(
     async (productId: string): Promise<boolean> => {
       if (!iapModule || !iapAvailable) {
-        Alert.alert("Not Available", "In-App Purchases are not available on this device.");
-        return false;
+        return false; // Signal caller to fall back to Stripe
+      }
+
+      // Check if the required function exists
+      if (typeof iapModule.requestSubscription !== "function") {
+        console.log("[IAP] requestSubscription not available, falling back");
+        return false; // Signal caller to fall back to Stripe
       }
 
       setPurchasing(true);
@@ -129,10 +134,12 @@ export function useAppleIAP(): UseAppleIAPReturn {
           console.log("[IAP] Purchase successful:", purchase.transactionId);
 
           // Finish the transaction
-          await iapModule.finishTransaction({
-            purchase,
-            isConsumable: false,
-          });
+          if (typeof iapModule.finishTransaction === "function") {
+            await iapModule.finishTransaction({
+              purchase,
+              isConsumable: false,
+            });
+          }
 
           return true;
         }

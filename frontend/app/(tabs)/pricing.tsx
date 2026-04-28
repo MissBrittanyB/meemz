@@ -149,6 +149,7 @@ export default function PricingScreen() {
         APPLE_PRODUCT_IDS[selectedPlan as keyof typeof APPLE_PRODUCT_IDS];
       if (!appleProductId) {
         Alert.alert("Error", "Invalid plan selected");
+        setProcessing(false);
         return;
       }
 
@@ -180,14 +181,21 @@ export default function PricingScreen() {
           "Payment Successful!",
           "Welcome to meemz premium! Enjoy unlimited access."
         );
+      } else {
+        // IAP not available or failed — fall back to Stripe
+        console.log("[Pricing] IAP returned false, falling back to Stripe");
+        setProcessing(false);
+        subscribeWithStripe();
+        return;
       }
     } catch (error: any) {
       console.error("Apple IAP error:", error);
       if (!error?.message?.includes("cancel")) {
-        Alert.alert(
-          "Payment Error",
-          error?.message || "Could not complete purchase"
-        );
+        // Fall back to Stripe on any IAP error
+        console.log("[Pricing] IAP error, falling back to Stripe");
+        setProcessing(false);
+        subscribeWithStripe();
+        return;
       }
     } finally {
       setProcessing(false);
