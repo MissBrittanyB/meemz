@@ -247,11 +247,6 @@ export default function PricingScreen() {
     }
   };
 
-  // Route to Stripe
-  const subscribeToPlan = () => {
-    subscribeWithStripe();
-  };
-
   const pollPaymentStatus = async (sessionId: string) => {
     for (let i = 0; i < 5; i++) {
       try {
