@@ -44,7 +44,6 @@
           "backgroundColor": "#0B0B0F"
         }
       ],
-      "expo-iap",
       "expo-web-browser"
     ],
     "experiments": {
