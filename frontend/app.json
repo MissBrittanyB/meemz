@@ -44,7 +44,8 @@
           "backgroundColor": "#0B0B0F"
         }
       ],
-      "expo-web-browser"
+      "expo-web-browser",
+      "react-native-iap"
     ],
     "experiments": {
       "typedRoutes": true

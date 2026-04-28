@@ -17,6 +17,7 @@ import axios from "axios";
 import { router } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import GradientText from "../../utils/GradientText";
+import { useNativeIAP, PLAN_TO_PRODUCT } from "../../utils/useNativeIAP";
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || "";
 
@@ -46,6 +47,10 @@ export default function PricingScreen() {
   const [selectedPlan, setSelectedPlan] = useState<string>("monthly");
   const [processing, setProcessing] = useState(false);
   const [token, setToken] = useState<string | null>(null);
+
+  // Native IAP for iOS
+  const { isIOS, available: iapAvailable, purchasing: iapPurchasing, purchase, restore } = useNativeIAP();
+  const useApplePayment = isIOS && iapAvailable;
 
   useEffect(() => {
     loadData();
@@ -112,6 +117,79 @@ export default function PricingScreen() {
     } finally {
       setProcessing(false);
     }
+  };
+
+  // Route to correct payment method
+  const subscribeToPlan = () => {
+    if (useApplePayment) {
+      subscribeWithApple();
+    } else {
+      subscribeWithStripe();
+    }
+  };
+
+  // Apple IAP purchase
+  const subscribeWithApple = async () => {
+    if (!token) {
+      Alert.alert("Sign Up Required", "Create an account first to subscribe!", [
+        { text: "Cancel", style: "cancel" },
+        { text: "Sign Up", onPress: () => router.push("/(tabs)/profile") },
+      ]);
+      return;
+    }
+
+    setProcessing(true);
+    try {
+      const productId = PLAN_TO_PRODUCT[selectedPlan];
+      if (!productId) {
+        Alert.alert("Error", "Invalid plan selected");
+        setProcessing(false);
+        return;
+      }
+
+      const success = await purchase(productId);
+      if (success) {
+        // Verify with backend
+        try {
+          await axios.post(
+            `${API_URL}/api/subscriptions/apple/verify`,
+            { product_id: productId, transaction_id: `apple_${Date.now()}` },
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+        } catch {}
+
+        setSubStatus({
+          status: "active",
+          plan_id: selectedPlan,
+          trial_available: false,
+          is_premium: true,
+        });
+        Alert.alert("Payment Successful!", "Welcome to meemz premium! Enjoy unlimited access.");
+      }
+    } catch (error: any) {
+      if (!error?.message?.includes("cancel")) {
+        Alert.alert("Payment Error", error?.message || "Could not complete purchase");
+      }
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  // Restore purchases
+  const handleRestore = async () => {
+    if (!token) {
+      Alert.alert("Sign In Required", "Please sign in to restore purchases.");
+      return;
+    }
+    setProcessing(true);
+    try {
+      const success = await restore();
+      if (success) {
+        await loadData();
+        Alert.alert("Restored!", "Your subscription has been restored.");
+      }
+    } catch {}
+    setProcessing(false);
   };
 
   // ============ STRIPE PURCHASE ============
@@ -412,7 +490,9 @@ export default function PricingScreen() {
 
         {/* Fine print */}
         <Text style={styles.finePrint}>
-          Payment will be processed securely via Stripe.{"\n"}Subscription auto-renews unless cancelled.
+          {useApplePayment
+            ? "Payment will be charged through the App Store.\nSubscription auto-renews unless cancelled at least 24 hours before the end of the current period."
+            : "Payment will be processed securely via Stripe.\nSubscription auto-renews unless cancelled."}
         </Text>
 
         {/* Legal Links */}
@@ -429,6 +509,17 @@ export default function PricingScreen() {
             <Text style={styles.legalLinkText}>Terms of Use (EULA)</Text>
           </TouchableOpacity>
         </View>
+
+        {/* Restore Purchases - iOS only */}
+        {isIOS && (
+          <TouchableOpacity
+            style={styles.restoreButton}
+            onPress={handleRestore}
+            disabled={processing}
+          >
+            <Text style={styles.restoreText}>Restore Purchases</Text>
+          </TouchableOpacity>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
