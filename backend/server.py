@@ -1820,7 +1820,7 @@ async def startup_event():
             "id": str(uuid.uuid4()),
             "email": demo_email,
             "username": "meemzreview",
-            "password": demo_password,
+            "password_hash": demo_password,
             "display_name": "meemzreview",
             "avatar": None,
             "bio": None,
@@ -1829,11 +1829,16 @@ async def startup_event():
             "is_admin": False,
             "terms_accepted": True,
             "created_at": datetime.utcnow(),
+            "favorites": [],
+            "recently_used": [],
+            "followers": [],
+            "following": [],
         }
         await db.users.insert_one(demo_user)
         logger.info("Apple Review demo account created")
     else:
         logger.info("Apple Review demo account exists")
+        await db.users.update_one({"email": demo_email, "password_hash": {"$exists": False}}, {"$rename": {"password": "password_hash"}})
 
     # Generate thumbnails for memes that don't have one yet
     missing_thumb_count = await db.memes.count_documents({
