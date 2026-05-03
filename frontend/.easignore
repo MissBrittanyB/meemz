@@ -1,0 +1,22 @@
+# EAS build ignore - exclude files not needed for the iOS/Android build tarball
+# Keeps .env (unlike .gitignore) so EXPO_PUBLIC_BACKEND_URL is available at build time.
+
+# Dependencies & build caches
+node_modules/
+.expo/
+.metro-cache/
+.ruff_cache/
+dist/
+web-build/
+
+# Local dev artefacts
+*.log
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+
+# Keep app.json, .env, and all real source
