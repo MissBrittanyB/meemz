@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   RefreshControl,
   Alert,
+  ScrollView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -252,17 +253,22 @@ export default function ExploreScreen() {
 
   const renderMemeCard = ({ item, index }: { item: Meme; index: number }) => {
     const isFavorited = favorites.includes(item.id);
+    const cardUri = item.thumbnail_base64 || item.image_base64 || "";
     return (
       <TouchableOpacity
         style={styles.memeCard}
         onPress={() => openMeme(item)}
         activeOpacity={0.85}
       >
-        <Image
-          source={{ uri: item.thumbnail_base64 || item.image_base64 || "" }}
-          style={styles.memeImage}
-          resizeMode="cover"
-        />
+        {cardUri ? (
+          <Image
+            source={{ uri: cardUri }}
+            style={styles.memeImage}
+            resizeMode="cover"
+          />
+        ) : (
+          <View style={[styles.memeImage, { backgroundColor: "#15151A" }]} />
+        )}
         <View style={styles.cardOverlay}>
           <View style={styles.cardTopRow}>
             <View
@@ -372,11 +378,20 @@ export default function ExploreScreen() {
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ alignItems: "center", paddingBottom: 16 }}>
             {selectedMeme && (
               <>
-                <Image
-                  source={{ uri: (fullMeme?.image_base64 || selectedMeme.thumbnail_base64 || selectedMeme.image_base64) }}
-                  style={styles.modalImage}
-                  resizeMode="contain"
-                />
+                {(() => {
+                  const imgUri = fullMeme?.image_base64 || selectedMeme.thumbnail_base64 || selectedMeme.image_base64 || "";
+                  return imgUri ? (
+                    <Image
+                      source={{ uri: imgUri }}
+                      style={styles.modalImage}
+                      resizeMode="contain"
+                    />
+                  ) : (
+                    <View style={[styles.modalImage, { backgroundColor: "#15151A", justifyContent: "center", alignItems: "center" }]}>
+                      <ActivityIndicator size="large" color="#FF7A1A" />
+                    </View>
+                  );
+                })()}
 
                 <View style={styles.modalInfo}>
                   <Text style={styles.modalName}>{selectedMeme.name}</Text>
