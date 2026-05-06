@@ -40,26 +40,46 @@ export function useNativeIAP() {
         console.log("[IAP] Connected");
         try {
           const subs = await getSubscriptions({ skus: IAP_SKUS });
-          console.log("[IAP] Products:", subs?.length);
-          setProducts(subs || []);
-          setAvailable(true);
+          const list = Array.isArray(subs) ? subs : [];
+          console.log("[IAP] Products loaded:", list.length);
+          setProducts(list);
+          // Only mark as available if products actually loaded - prevents
+          // attempting purchases against unloaded SKUs (which throws errors)
+          setAvailable(list.length > 0);
         } catch (e: any) {
           console.log("[IAP] Fetch error:", e?.message);
-          setAvailable(true);
+          setAvailable(false);
         }
       }
     } catch (e: any) {
       console.log("[IAP] Init error:", e?.message);
+      setAvailable(false);
     } finally {
       setLoading(false);
     }
   };
 
   const purchase = useCallback(async (productId: string): Promise<boolean> => {
-    if (!available) return false;
+    if (!available) {
+      Alert.alert(
+        "Subscriptions Unavailable",
+        "App Store subscriptions are not available right now. Please ensure you're signed into the App Store and try again."
+      );
+      return false;
+    }
     setPurchasing(true);
     try {
-      const result = await requestSubscription({ sku: productId });
+      // Find the loaded product to get its subscription offer details (required by StoreKit 2)
+      const product = products.find((p: any) => p?.productId === productId || p?.id === productId);
+      const offerToken = product?.subscriptionOfferDetails?.[0]?.offerToken;
+
+      // Build args - include subscriptionOffers for Android, sku for both
+      const args: any = { sku: productId };
+      if (offerToken) {
+        args.subscriptionOffers = [{ sku: productId, offerToken }];
+      }
+
+      const result = await requestSubscription(args);
       if (result) {
         try { await finishTransaction({ purchase: result, isConsumable: false }); } catch {}
         setPurchasing(false);
@@ -69,11 +89,22 @@ export function useNativeIAP() {
       return false;
     } catch (e: any) {
       setPurchasing(false);
-      if (e?.code === "E_USER_CANCELLED" || e?.message?.includes("cancel")) return false;
-      Alert.alert("Purchase Error", e?.message || "Could not complete purchase.");
+      const msg = e?.message || "";
+      // Silently swallow user-initiated cancellations - never show an error
+      if (
+        e?.code === "E_USER_CANCELLED" ||
+        e?.code === "E_DEFERRED" ||
+        msg.toLowerCase().includes("cancel") ||
+        msg.toLowerCase().includes("dismiss")
+      ) {
+        return false;
+      }
+      // Only surface real, actionable errors
+      console.log("[IAP] Purchase error:", e?.code, msg);
+      Alert.alert("Purchase Error", msg || "Could not complete purchase.");
       return false;
     }
-  }, [available]);
+  }, [available, products]);
 
   const restore = useCallback(async (): Promise<boolean> => {
     if (!available) return false;

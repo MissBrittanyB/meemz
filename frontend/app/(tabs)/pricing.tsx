@@ -79,10 +79,14 @@ export default function PricingScreen() {
   };
 
   const startTrial = async () => {
+    // Trial is now handled as an introductory offer on the App Store subscription itself
+    // (configured in App Store Connect). Apple Guideline 3.1.2(c) prohibits a separate
+    // free-trial button on the purchase screen. This function is retained for backward
+    // compatibility with any deep links but should no longer be invoked from the UI.
     if (!token) {
       Alert.alert(
         "Sign Up Required",
-        "Create an account first to start your free trial!",
+        "Create an account first to subscribe!",
         [
           { text: "Cancel", style: "cancel" },
           { text: "Sign Up", onPress: () => router.push("/(tabs)/profile") },
@@ -378,46 +382,6 @@ export default function PricingScreen() {
           </Text>
         </View>
 
-        {/* Trial CTA */}
-        {(!subStatus || subStatus.trial_available) && (
-          <TouchableOpacity
-            style={styles.trialButton}
-            onPress={startTrial}
-            disabled={processing}
-            activeOpacity={0.8}
-          >
-            <LinearGradient
-              colors={["#FF7A1A", "#FF5A8A", "#8B5CFF"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.trialGradient}
-            >
-              {processing ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <>
-                  <Ionicons name="gift" size={22} color="#fff" />
-                  <View style={styles.trialTextContainer}>
-                    <Text style={styles.trialTitle}>
-                      Start 7-Day Free Trial
-                    </Text>
-                    <Text style={styles.trialSubtext}>
-                      No payment required. Cancel anytime.
-                    </Text>
-                  </View>
-                </>
-              )}
-            </LinearGradient>
-          </TouchableOpacity>
-        )}
-
-        {/* Divider */}
-        <View style={styles.divider}>
-          <View style={styles.dividerLine} />
-          <Text style={styles.dividerText}>or choose a plan</Text>
-          <View style={styles.dividerLine} />
-        </View>
-
         {/* Plan Cards */}
         <View style={styles.plansContainer}>
           {plans.map((plan) => (
@@ -483,11 +447,11 @@ export default function PricingScreen() {
           )}
         </TouchableOpacity>
 
-        {/* Fine print */}
+        {/* Fine print - Apple Guideline 3.1.2(a) compliant subscription disclosure */}
         <Text style={styles.finePrint}>
           {useApplePayment
-            ? "Payment will be charged through the App Store.\nSubscription auto-renews unless cancelled at least 24 hours before the end of the current period."
-            : "Payment will be processed securely via Stripe.\nSubscription auto-renews unless cancelled."}
+            ? "By subscribing, you agree to a recurring auto-renewing subscription. Payment will be charged to your Apple ID at confirmation of purchase. Your subscription automatically renews at the same price unless cancelled at least 24 hours before the end of the current period. You can manage and cancel subscriptions in your App Store account settings."
+            : "By subscribing, you agree to a recurring auto-renewing subscription. Payment will be processed securely via Stripe. Your subscription automatically renews unless cancelled before the end of the current billing period."}
         </Text>
 
         {/* Legal Links */}
