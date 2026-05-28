@@ -123,11 +123,21 @@ export default function PricingScreen() {
     }
   };
 
-  // Route to correct payment method
+  // Route to correct payment method.
+  // Apple Guideline 3.1.1: iOS MUST use In-App Purchase only - never fall back to Stripe.
   const subscribeToPlan = () => {
-    if (useApplePayment) {
+    if (isIOS) {
+      // iOS - always IAP, never Stripe
+      if (!iapAvailable) {
+        Alert.alert(
+          "Subscriptions Unavailable",
+          "App Store subscriptions are temporarily unavailable. Please ensure you are signed in to the App Store, then try again. If the issue persists, please try restarting the app."
+        );
+        return;
+      }
       subscribeWithApple();
     } else {
+      // Web/Android - Stripe
       subscribeWithStripe();
     }
   };
@@ -196,8 +206,19 @@ export default function PricingScreen() {
     setProcessing(false);
   };
 
-  // ============ STRIPE PURCHASE ============
+  // ============ STRIPE PURCHASE (Web/Android only) ============
+  // Per Apple Guideline 3.1.1, this MUST NEVER be invoked on iOS.
+  // iOS subscriptions are processed exclusively via Apple In-App Purchase.
   const subscribeWithStripe = async () => {
+    if (isIOS) {
+      // Hard guard - should be unreachable but protects against future regressions
+      Alert.alert(
+        "Use In-App Purchase",
+        "On iOS, subscriptions are processed through the App Store. Please use the Subscribe button."
+      );
+      return;
+    }
+
     if (!token) {
       Alert.alert(
         "Sign Up Required",
@@ -449,9 +470,9 @@ export default function PricingScreen() {
 
         {/* Fine print - Apple Guideline 3.1.2(a) compliant subscription disclosure */}
         <Text style={styles.finePrint}>
-          {useApplePayment
+          {isIOS
             ? "By subscribing, you agree to a recurring auto-renewing subscription. Payment will be charged to your Apple ID at confirmation of purchase. Your subscription automatically renews at the same price unless cancelled at least 24 hours before the end of the current period. You can manage and cancel subscriptions in your App Store account settings."
-            : "By subscribing, you agree to a recurring auto-renewing subscription. Payment will be processed securely via Stripe. Your subscription automatically renews unless cancelled before the end of the current billing period."}
+            : "By subscribing, you agree to a recurring auto-renewing subscription. Payment will be processed securely. Your subscription automatically renews unless cancelled before the end of the current billing period."}
         </Text>
 
         {/* Legal Links */}
