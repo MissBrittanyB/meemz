@@ -45,7 +45,8 @@
         }
       ],
       "expo-web-browser",
-      "react-native-iap"
+      "react-native-iap",
+      "expo-font"
     ],
     "experiments": {
       "typedRoutes": true

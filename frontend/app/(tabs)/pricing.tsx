@@ -125,19 +125,12 @@ export default function PricingScreen() {
 
   // Route to correct payment method.
   // Apple Guideline 3.1.1: iOS MUST use In-App Purchase only - never fall back to Stripe.
+  // The native IAP hook performs lazy product fetch + retries if products weren't
+  // ready at mount, so we let the user tap Subscribe at any time.
   const subscribeToPlan = () => {
     if (isIOS) {
-      // iOS - always IAP, never Stripe
-      if (!iapAvailable) {
-        Alert.alert(
-          "Subscriptions Unavailable",
-          "App Store subscriptions are temporarily unavailable. Please ensure you are signed in to the App Store, then try again. If the issue persists, please try restarting the app."
-        );
-        return;
-      }
       subscribeWithApple();
     } else {
-      // Web/Android - Stripe
       subscribeWithStripe();
     }
   };

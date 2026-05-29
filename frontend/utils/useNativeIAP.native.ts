@@ -1,10 +1,24 @@
 /**
  * Native IAP hook for meemz (iOS/Android)
  * Uses react-native-iap for StoreKit 2
+ *
+ * Hardened for Apple Review:
+ *  - Retries product fetch up to 3 times with exponential backoff on init
+ *  - Re-fetches products on-demand if user taps Subscribe before initial load finishes
+ *  - Restore always works regardless of product list state (entitlement recovery)
+ *  - Clear, action-oriented error messages
  */
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Platform, Alert } from "react-native";
-import { initConnection, endConnection, getSubscriptions, requestSubscription, getAvailablePurchases, finishTransaction, setup } from "react-native-iap";
+import {
+  initConnection,
+  endConnection,
+  getSubscriptions,
+  requestSubscription,
+  getAvailablePurchases,
+  finishTransaction,
+  setup,
+} from "react-native-iap";
 
 export const PLAN_TO_PRODUCT: Record<string, string> = {
   weekly: "meemz_weekly",
@@ -14,13 +28,22 @@ export const PLAN_TO_PRODUCT: Record<string, string> = {
 
 const IAP_SKUS = ["meemz_weekly", "meemz_Monthly", "memo_Yearly"];
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 export function useNativeIAP() {
   const [available, setAvailable] = useState(false);
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [purchasing, setPurchasing] = useState(false);
+  const connectedRef = useRef(false);
+  const productsRef = useRef<any[]>([]);
 
   const isIOS = Platform.OS === "ios";
+
+  // Keep ref in sync with state for use inside async callbacks
+  useEffect(() => {
+    productsRef.current = products;
+  }, [products]);
 
   useEffect(() => {
     if (!isIOS) {
@@ -28,29 +51,55 @@ export function useNativeIAP() {
       return;
     }
     initIAP();
-    return () => { try { endConnection(); } catch {} };
+    return () => {
+      try { endConnection(); } catch {}
+      connectedRef.current = false;
+    };
   }, []);
+
+  // Fetch products with exponential retry. Returns the loaded list.
+  const fetchProducts = async (attempts = 3): Promise<any[]> => {
+    for (let i = 0; i < attempts; i++) {
+      try {
+        const subs = await getSubscriptions({ skus: IAP_SKUS });
+        const list = Array.isArray(subs) ? subs : [];
+        if (list.length > 0) {
+          console.log(`[IAP] Products loaded on attempt ${i + 1}:`, list.length);
+          return list;
+        }
+        console.log(`[IAP] Attempt ${i + 1} returned empty list, retrying...`);
+      } catch (e: any) {
+        console.log(`[IAP] Fetch attempt ${i + 1} error:`, e?.message);
+      }
+      if (i < attempts - 1) await sleep(800 * (i + 1));
+    }
+    return [];
+  };
+
+  const ensureConnection = async (): Promise<boolean> => {
+    if (connectedRef.current) return true;
+    try {
+      try { setup({ storekitMode: "STOREKIT2_MODE" }); } catch {}
+      const connected = await initConnection();
+      connectedRef.current = !!connected;
+      return !!connected;
+    } catch (e: any) {
+      console.log("[IAP] initConnection error:", e?.message);
+      return false;
+    }
+  };
 
   const initIAP = async () => {
     try {
-      try { setup({ storekitMode: "STOREKIT2_MODE" }); } catch {}
-
-      const connected = await initConnection();
-      if (connected) {
-        console.log("[IAP] Connected");
-        try {
-          const subs = await getSubscriptions({ skus: IAP_SKUS });
-          const list = Array.isArray(subs) ? subs : [];
-          console.log("[IAP] Products loaded:", list.length);
-          setProducts(list);
-          // Only mark as available if products actually loaded - prevents
-          // attempting purchases against unloaded SKUs (which throws errors)
-          setAvailable(list.length > 0);
-        } catch (e: any) {
-          console.log("[IAP] Fetch error:", e?.message);
-          setAvailable(false);
-        }
+      const ok = await ensureConnection();
+      if (!ok) {
+        setAvailable(false);
+        return;
       }
+      const list = await fetchProducts(3);
+      setProducts(list);
+      productsRef.current = list;
+      setAvailable(list.length > 0);
     } catch (e: any) {
       console.log("[IAP] Init error:", e?.message);
       setAvailable(false);
@@ -60,25 +109,59 @@ export function useNativeIAP() {
   };
 
   const purchase = useCallback(async (productId: string): Promise<boolean> => {
-    if (!available) {
-      Alert.alert(
-        "Subscriptions Unavailable",
-        "App Store subscriptions are not available right now. Please ensure you're signed into the App Store and try again."
-      );
-      return false;
-    }
     setPurchasing(true);
     try {
-      // Find the loaded product to get its subscription offer details (required by StoreKit 2)
-      const product = products.find((p: any) => p?.productId === productId || p?.id === productId);
-      const offerToken = product?.subscriptionOfferDetails?.[0]?.offerToken;
+      // 1. Make sure StoreKit is connected
+      const connected = await ensureConnection();
+      if (!connected) {
+        setPurchasing(false);
+        Alert.alert(
+          "App Store Unavailable",
+          "Couldn't reach the App Store. Please check your internet connection, ensure you're signed in to the App Store, and try again."
+        );
+        return false;
+      }
 
-      // Build args - include subscriptionOffers for Android, sku for both
+      // 2. Make sure products are loaded; refetch on-demand if they aren't yet
+      let list = productsRef.current;
+      if (!list || list.length === 0) {
+        console.log("[IAP] Products not loaded yet, fetching on demand...");
+        list = await fetchProducts(3);
+        if (list.length > 0) {
+          setProducts(list);
+          productsRef.current = list;
+          setAvailable(true);
+        }
+      }
+
+      if (!list || list.length === 0) {
+        setPurchasing(false);
+        Alert.alert(
+          "Subscriptions Unavailable",
+          "We couldn't load subscription options from the App Store. Please ensure you're signed in to the App Store (Settings → [Your Name] → Media & Purchases), then try again."
+        );
+        return false;
+      }
+
+      // 3. Verify the specific product we want exists in the loaded list
+      const product = list.find((p: any) => p?.productId === productId || p?.id === productId);
+      if (!product) {
+        setPurchasing(false);
+        Alert.alert(
+          "Subscription Unavailable",
+          "This subscription option isn't available right now. Please try a different plan or try again later."
+        );
+        return false;
+      }
+
+      // 4. Build subscription offer args (required for StoreKit 2 + introductory offers)
+      const offerToken = product?.subscriptionOfferDetails?.[0]?.offerToken;
       const args: any = { sku: productId };
       if (offerToken) {
         args.subscriptionOffers = [{ sku: productId, offerToken }];
       }
 
+      // 5. Trigger the native purchase sheet
       const result = await requestSubscription(args);
       if (result) {
         try { await finishTransaction({ purchase: result, isConsumable: false }); } catch {}
@@ -99,33 +182,33 @@ export function useNativeIAP() {
       ) {
         return false;
       }
-      // Only surface real, actionable errors
       console.log("[IAP] Purchase error:", e?.code, msg);
-      Alert.alert("Purchase Error", msg || "Could not complete purchase.");
+      Alert.alert("Purchase Error", msg || "Could not complete purchase. Please try again.");
       return false;
     }
-  }, [available, products]);
+  }, []);
 
   const restore = useCallback(async (): Promise<boolean> => {
-    if (!available) return false;
     setPurchasing(true);
     try {
+      // Restore should work even when products are unavailable - it queries existing entitlements
+      await ensureConnection();
       const purchases = await getAvailablePurchases();
       setPurchasing(false);
-      if (purchases?.length > 0) {
+      if (purchases && purchases.length > 0) {
         for (const p of purchases) {
           try { await finishTransaction({ purchase: p, isConsumable: false }); } catch {}
         }
         return true;
       }
-      Alert.alert("No Purchases", "No previous subscriptions found.");
+      Alert.alert("No Purchases", "No previous subscriptions found on this Apple ID.");
       return false;
     } catch (e: any) {
       setPurchasing(false);
-      Alert.alert("Restore Error", e?.message || "Could not restore.");
+      Alert.alert("Restore Error", e?.message || "Could not restore purchases.");
       return false;
     }
-  }, [available]);
+  }, []);
 
   return { isIOS, available, products, loading, purchasing, purchase, restore };
 }
