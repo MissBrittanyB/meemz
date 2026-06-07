@@ -10,6 +10,9 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
+      "entitlements": {
+        "com.apple.developer.in-app-purchases": true
+      },
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "meemz needs access to your photo library to upload memes and GIFs you want to share with the community.",
         "NSPhotoLibraryAddUsageDescription": "meemz saves animated memes to your camera roll so you can share them on social media with motion.",

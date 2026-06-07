@@ -108,7 +108,7 @@ export function useNativeIAP() {
     }
   };
 
-  const purchase = useCallback(async (productId: string): Promise<boolean> => {
+  const purchase = useCallback(async (productId: string): Promise<any | null> => {
     setPurchasing(true);
     try {
       // 1. Make sure StoreKit is connected
@@ -119,7 +119,7 @@ export function useNativeIAP() {
           "App Store Unavailable",
           "Couldn't reach the App Store. Please check your internet connection, ensure you're signed in to the App Store, and try again."
         );
-        return false;
+        return null;
       }
 
       // 2. Make sure products are loaded; refetch on-demand if they aren't yet
@@ -140,7 +140,7 @@ export function useNativeIAP() {
           "Subscriptions Unavailable",
           "We couldn't load subscription options from the App Store. Please ensure you're signed in to the App Store (Settings → [Your Name] → Media & Purchases), then try again."
         );
-        return false;
+        return null;
       }
 
       // 3. Verify the specific product we want exists in the loaded list
@@ -151,7 +151,7 @@ export function useNativeIAP() {
           "Subscription Unavailable",
           "This subscription option isn't available right now. Please try a different plan or try again later."
         );
-        return false;
+        return null;
       }
 
       // 4. Build subscription offer args (required for StoreKit 2 + introductory offers)
@@ -162,14 +162,16 @@ export function useNativeIAP() {
       }
 
       // 5. Trigger the native purchase sheet
-      const result = await requestSubscription(args);
+      const result: any = await requestSubscription(args);
       if (result) {
         try { await finishTransaction({ purchase: result, isConsumable: false }); } catch {}
         setPurchasing(false);
-        return true;
+        // Return the raw purchase result so the caller can extract the real
+        // transactionId and transactionReceipt for backend verification.
+        return result;
       }
       setPurchasing(false);
-      return false;
+      return null;
     } catch (e: any) {
       setPurchasing(false);
       const msg = e?.message || "";
@@ -180,11 +182,11 @@ export function useNativeIAP() {
         msg.toLowerCase().includes("cancel") ||
         msg.toLowerCase().includes("dismiss")
       ) {
-        return false;
+        return null;
       }
       console.log("[IAP] Purchase error:", e?.code, msg);
       Alert.alert("Purchase Error", msg || "Could not complete purchase. Please try again.");
-      return false;
+      return null;
     }
   }, []);
 

@@ -5,6 +5,7 @@ from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
+import httpx
 from pathlib import Path
 from pydantic import BaseModel, Field, EmailStr
 from typing import List, Optional
@@ -1463,6 +1464,105 @@ async def payment_cancel():
 
 
 # ============ APPLE IAP RECEIPT VALIDATION ============
+# Uses Apple's /verifyReceipt endpoint with automatic sandbox/production fallback.
+# Per Apple's recommended flow: always try production first; if status code 21007
+# is returned ("This receipt is from the test environment, but it was sent to the
+# production environment"), retry against the sandbox URL.
+# Reference: https://developer.apple.com/documentation/appstorereceipts/verifyreceipt
+
+APPLE_VERIFY_PRODUCTION_URL = "https://buy.itunes.apple.com/verifyReceipt"
+APPLE_VERIFY_SANDBOX_URL = "https://sandbox.itunes.apple.com/verifyReceipt"
+# Optional shared secret - REQUIRED for auto-renewable subscriptions.
+# Configure in App Store Connect > Apps > meemz > App Information > App-Specific Shared Secret
+APPLE_SHARED_SECRET = os.environ.get("APPLE_SHARED_SECRET", "")
+
+# Force the verification environment if needed (defaults to production-first auto-fallback).
+# Valid values: "auto", "production", "sandbox"
+APPLE_VERIFY_ENV = os.environ.get("APPLE_VERIFY_ENV", "auto").lower()
+
+VALID_APPLE_PRODUCT_IDS = {"meemz_weekly", "meemz_Monthly", "memo_Yearly"}
+
+
+async def _post_verify_receipt(url: str, payload: dict) -> dict:
+    """POST a verifyReceipt request to Apple and return the parsed JSON."""
+    timeout = httpx.Timeout(20.0, connect=10.0)
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        r = await client.post(url, json=payload)
+        r.raise_for_status()
+        return r.json()
+
+
+async def verify_apple_receipt(receipt_base64: str) -> dict:
+    """
+    Verify an Apple receipt against Apple's servers.
+
+    Returns Apple's response dict with an extra "_environment" key indicating
+    which endpoint ("production" | "sandbox") accepted the receipt. Raises
+    HTTPException on validation failure.
+
+    Status codes:
+      0      -> Receipt is valid
+      21007  -> Receipt is from sandbox; retry against sandbox URL
+      21008  -> Receipt is from production; retry against production URL
+      other  -> Error (see Apple docs)
+    """
+    if not receipt_base64:
+        raise HTTPException(status_code=400, detail="Missing receipt data")
+
+    payload = {
+        "receipt-data": receipt_base64,
+        "exclude-old-transactions": True,
+    }
+    if APPLE_SHARED_SECRET:
+        payload["password"] = APPLE_SHARED_SECRET
+
+    # Pick the starting URL based on env config
+    if APPLE_VERIFY_ENV == "sandbox":
+        start_url = APPLE_VERIFY_SANDBOX_URL
+        fallback_url = None
+    elif APPLE_VERIFY_ENV == "production":
+        start_url = APPLE_VERIFY_PRODUCTION_URL
+        fallback_url = None
+    else:
+        # "auto" - always try production first, fall back to sandbox on 21007
+        start_url = APPLE_VERIFY_PRODUCTION_URL
+        fallback_url = APPLE_VERIFY_SANDBOX_URL
+
+    try:
+        data = await _post_verify_receipt(start_url, payload)
+    except Exception as e:
+        logger.error(f"Apple verifyReceipt request failed ({start_url}): {e}")
+        raise HTTPException(status_code=502, detail="Could not reach Apple verification server")
+
+    status = data.get("status")
+    environment = "production" if start_url == APPLE_VERIFY_PRODUCTION_URL else "sandbox"
+
+    # 21007 -> sandbox receipt sent to production; retry sandbox
+    if status == 21007 and fallback_url:
+        try:
+            data = await _post_verify_receipt(fallback_url, payload)
+            environment = "sandbox"
+            status = data.get("status")
+        except Exception as e:
+            logger.error(f"Apple sandbox verifyReceipt failed: {e}")
+            raise HTTPException(status_code=502, detail="Could not reach Apple sandbox verification server")
+    # 21008 -> production receipt sent to sandbox; retry production
+    elif status == 21008 and APPLE_VERIFY_ENV == "auto":
+        try:
+            data = await _post_verify_receipt(APPLE_VERIFY_PRODUCTION_URL, payload)
+            environment = "production"
+            status = data.get("status")
+        except Exception as e:
+            logger.error(f"Apple production verifyReceipt retry failed: {e}")
+            raise HTTPException(status_code=502, detail="Could not reach Apple verification server")
+
+    if status != 0:
+        logger.warning(f"Apple receipt invalid: status={status} env={environment}")
+        raise HTTPException(status_code=400, detail=f"Apple receipt validation failed (status {status})")
+
+    data["_environment"] = environment
+    return data
+
 
 class AppleReceiptData(BaseModel):
     product_id: str
@@ -1470,43 +1570,111 @@ class AppleReceiptData(BaseModel):
     receipt_data: Optional[str] = None
     original_transaction_id: Optional[str] = None
 
+
 @api_router.post("/subscriptions/apple/verify")
 async def verify_apple_purchase(
     receipt: AppleReceiptData,
     current_user: dict = Depends(get_required_user)
 ):
-    """Verify and activate an Apple In-App Purchase subscription"""
+    """
+    Verify and activate an Apple In-App Purchase subscription.
+
+    Performs server-side validation by calling Apple's /verifyReceipt endpoint
+    with automatic sandbox/production fallback. Only activates the subscription
+    after Apple confirms the receipt is valid AND contains the claimed product.
+    """
     user_id = current_user["id"]
     product_id = receipt.product_id
     transaction_id = receipt.transaction_id
 
-    logger.info(f"Apple IAP verification: user={user_id}, product={product_id}, txn={transaction_id}")
+    logger.info(f"Apple IAP verify: user={user_id} product={product_id} txn={transaction_id}")
 
     plan_map = {
         "meemz_weekly": {"plan_id": "weekly", "days": 7},
         "meemz_Monthly": {"plan_id": "monthly", "days": 30},
         "memo_Yearly": {"plan_id": "yearly", "days": 365},
     }
-
     plan_info = plan_map.get(product_id)
     if not plan_info:
         raise HTTPException(status_code=400, detail=f"Unknown product: {product_id}")
 
-    existing_txn = await db.apple_transactions.find_one({"transaction_id": transaction_id})
-    if existing_txn:
-        logger.info(f"Duplicate Apple transaction: {transaction_id}")
-        return {"status": "already_processed", "plan_id": plan_info["plan_id"]}
+    # Duplicate-protection: short-circuit if we've already processed this txn
+    if transaction_id:
+        existing_txn = await db.apple_transactions.find_one({"transaction_id": transaction_id})
+        if existing_txn:
+            logger.info(f"Apple txn already processed: {transaction_id}")
+            return {"status": "already_processed", "plan_id": plan_info["plan_id"]}
+
+    environment = "unknown"
+    verified_period_end: Optional[datetime] = None
+
+    # ---- Server-side validation with Apple ----
+    if receipt.receipt_data:
+        try:
+            apple_resp = await verify_apple_receipt(receipt.receipt_data)
+            environment = apple_resp.get("_environment", "unknown")
+
+            # Find a matching latest receipt info for the product we're activating
+            latest = apple_resp.get("latest_receipt_info") or apple_resp.get("receipt", {}).get("in_app", [])
+            if not isinstance(latest, list):
+                latest = []
+            matching = [
+                item for item in latest
+                if item.get("product_id") == product_id
+                and (not transaction_id or str(item.get("transaction_id")) == str(transaction_id)
+                     or str(item.get("original_transaction_id")) == str(transaction_id))
+            ]
+            # Fall back to any tx for this product if the exact txn id isn't found
+            # (Apple sometimes only returns the latest entry per subscription group)
+            if not matching:
+                matching = [item for item in latest if item.get("product_id") == product_id]
+
+            if not matching:
+                logger.warning(f"Receipt valid but product {product_id} not found in response (env={environment})")
+                raise HTTPException(status_code=400, detail="Product not found in Apple receipt")
+
+            # Use Apple's authoritative expires_date if present
+            apple_item = matching[-1]
+            expires_ms = apple_item.get("expires_date_ms")
+            if expires_ms:
+                verified_period_end = datetime.utcfromtimestamp(int(expires_ms) / 1000.0)
+
+            # Pull authoritative original_transaction_id from Apple
+            original_transaction_id = (
+                apple_item.get("original_transaction_id")
+                or receipt.original_transaction_id
+                or transaction_id
+            )
+            # If client didn't supply transaction_id, use Apple's
+            if not transaction_id:
+                transaction_id = apple_item.get("transaction_id") or original_transaction_id
+
+            logger.info(f"Apple receipt verified: env={environment} product={product_id} expires={verified_period_end}")
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Apple receipt verification error: {e}")
+            raise HTTPException(status_code=400, detail="Receipt verification failed")
+    else:
+        # No receipt data was provided. We REQUIRE it for proper validation.
+        logger.warning(f"Apple verify called without receipt_data: user={user_id} txn={transaction_id}")
+        raise HTTPException(
+            status_code=400,
+            detail="Receipt data is required for purchase verification.",
+        )
 
     now = datetime.utcnow()
-    period_end = now + timedelta(days=plan_info["days"])
+    # Use Apple's expiration if available, otherwise fall back to plan duration
+    period_end = verified_period_end or (now + timedelta(days=plan_info["days"]))
 
     await db.apple_transactions.insert_one({
         "user_id": user_id,
         "product_id": product_id,
         "transaction_id": transaction_id,
         "original_transaction_id": receipt.original_transaction_id,
-        "created_at": now,
+        "environment": environment,
         "verified": True,
+        "created_at": now,
     })
 
     await db.subscriptions.update_one(
@@ -1519,15 +1687,17 @@ async def verify_apple_purchase(
             "payment_provider": "apple",
             "apple_product_id": product_id,
             "apple_transaction_id": transaction_id,
+            "apple_environment": environment,
         }},
         upsert=True,
     )
 
-    logger.info(f"Apple IAP subscription activated: user={user_id}, plan={plan_info['plan_id']}")
+    logger.info(f"Apple IAP activated: user={user_id} plan={plan_info['plan_id']} env={environment}")
     return {
         "status": "active",
         "plan_id": plan_info["plan_id"],
         "current_period_end": period_end.isoformat(),
+        "environment": environment,
     }
 
 @api_router.post("/subscriptions/apple/restore")

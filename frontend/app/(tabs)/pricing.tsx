@@ -49,8 +49,7 @@ export default function PricingScreen() {
   const [token, setToken] = useState<string | null>(null);
 
   // Native IAP for iOS
-  const { isIOS, available: iapAvailable, purchasing: iapPurchasing, purchase, restore } = useNativeIAP();
-  const useApplePayment = isIOS && iapAvailable;
+  const { isIOS, available: iapAvailable, loading: iapLoading, purchasing: iapPurchasing, purchase, restore } = useNativeIAP();
 
   useEffect(() => {
     loadData();
@@ -154,16 +153,40 @@ export default function PricingScreen() {
         return;
       }
 
-      const success = await purchase(productId);
-      if (success) {
-        // Verify with backend
+      const purchaseResult: any = await purchase(productId);
+      if (purchaseResult) {
+        // Extract the REAL transaction id + receipt from StoreKit
+        // (react-native-iap exposes both transactionId and transactionReceipt)
+        const transactionId =
+          purchaseResult.transactionId ||
+          purchaseResult.id ||
+          purchaseResult.originalTransactionIdentifierIOS ||
+          "";
+        const transactionReceipt =
+          purchaseResult.transactionReceipt ||
+          purchaseResult.receiptIOS ||
+          purchaseResult.jwsRepresentation ||
+          "";
+        const originalTransactionId =
+          purchaseResult.originalTransactionIdentifierIOS ||
+          purchaseResult.originalTransactionId ||
+          transactionId;
+
+        // Server-side verification with Apple (sandbox/production aware)
         try {
           await axios.post(
             `${API_URL}/api/subscriptions/apple/verify`,
-            { product_id: productId, transaction_id: `apple_${Date.now()}` },
+            {
+              product_id: productId,
+              transaction_id: transactionId,
+              original_transaction_id: originalTransactionId,
+              receipt_data: transactionReceipt,
+            },
             { headers: { Authorization: `Bearer ${token}` } }
           );
-        } catch {}
+        } catch (verifyErr: any) {
+          console.log("[IAP] Backend verify error:", verifyErr?.message);
+        }
 
         setSubStatus({
           status: "active",
@@ -451,6 +474,11 @@ export default function PricingScreen() {
         >
           {processing ? (
             <ActivityIndicator color="#fff" />
+          ) : isIOS && iapLoading ? (
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+              <ActivityIndicator color="#fff" />
+              <Text style={styles.subscribeText}>Loading App Store…</Text>
+            </View>
           ) : (
             <Text style={styles.subscribeText}>
               Subscribe —{" "}
