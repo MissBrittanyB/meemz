@@ -24,16 +24,7 @@
       "ios": {
         "resourceClass": "m-medium",
         "simulator": false,
-        "bundleIdentifier": "com.meemz.app",
         "buildConfiguration": "Release"
-      }
-    }
-  },
-  "submit": {
-    "production": {
-      "ios": {
-        "ascAppId": "",
-        "appleTeamId": ""
       }
     }
   }
