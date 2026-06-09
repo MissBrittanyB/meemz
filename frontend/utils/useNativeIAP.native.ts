@@ -1,23 +1,32 @@
 /**
- * Native IAP hook for meemz (iOS/Android)
- * Uses react-native-iap for StoreKit 2
+ * Native IAP hook for meemz (iOS) - react-native-iap v15.x
  *
- * Hardened for Apple Review:
- *  - Retries product fetch up to 3 times with exponential backoff on init
- *  - Re-fetches products on-demand if user taps Subscribe before initial load finishes
- *  - Restore always works regardless of product list state (entitlement recovery)
- *  - Clear, action-oriented error messages
+ * IMPORTANT: react-native-iap v15 changed the API significantly. The old
+ * `getSubscriptions` / `requestSubscription` functions no longer exist.
+ * Use `fetchProducts` (with type: 'subs') and `requestPurchase`.
+ *
+ * Purchase results arrive asynchronously via `purchaseUpdatedListener`,
+ * NOT from the requestPurchase promise (StoreKit 2 architecture).
+ *
+ * API reference (v15):
+ *   - initConnection()
+ *   - fetchProducts({ skus, type: 'subs' })
+ *   - requestPurchase({ request: { ios: { sku }, android: { skus } }, type: 'subs' })
+ *   - purchaseUpdatedListener / purchaseErrorListener
+ *   - getAvailablePurchases() for restore
+ *   - finishTransaction({ purchase, isConsumable: false })
  */
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Platform, Alert } from "react-native";
 import {
   initConnection,
   endConnection,
-  getSubscriptions,
-  requestSubscription,
+  fetchProducts,
+  requestPurchase,
   getAvailablePurchases,
   finishTransaction,
-  setup,
+  purchaseUpdatedListener,
+  purchaseErrorListener,
 } from "react-native-iap";
 
 export const PLAN_TO_PRODUCT: Record<string, string> = {
@@ -35,12 +44,16 @@ export function useNativeIAP() {
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [purchasing, setPurchasing] = useState(false);
+
   const connectedRef = useRef(false);
   const productsRef = useRef<any[]>([]);
+  const pendingPurchaseResolveRef = useRef<((p: any) => void) | null>(null);
+  const pendingPurchaseRejectRef = useRef<((e: any) => void) | null>(null);
+  const updateSubRef = useRef<any>(null);
+  const errorSubRef = useRef<any>(null);
 
   const isIOS = Platform.OS === "ios";
 
-  // Keep ref in sync with state for use inside async callbacks
   useEffect(() => {
     productsRef.current = products;
   }, [products]);
@@ -52,41 +65,69 @@ export function useNativeIAP() {
     }
     initIAP();
     return () => {
+      try { updateSubRef.current?.remove(); } catch {}
+      try { errorSubRef.current?.remove(); } catch {}
       try { endConnection(); } catch {}
       connectedRef.current = false;
     };
   }, []);
 
-  // Fetch products with exponential retry. Returns the loaded list.
-  const fetchProducts = async (attempts = 3): Promise<any[]> => {
-    for (let i = 0; i < attempts; i++) {
-      try {
-        const subs = await getSubscriptions({ skus: IAP_SKUS });
-        const list = Array.isArray(subs) ? subs : [];
-        if (list.length > 0) {
-          console.log(`[IAP] Products loaded on attempt ${i + 1}:`, list.length);
-          return list;
-        }
-        console.log(`[IAP] Attempt ${i + 1} returned empty list, retrying...`);
-      } catch (e: any) {
-        console.log(`[IAP] Fetch attempt ${i + 1} error:`, e?.message);
-      }
-      if (i < attempts - 1) await sleep(800 * (i + 1));
-    }
-    return [];
-  };
-
   const ensureConnection = async (): Promise<boolean> => {
     if (connectedRef.current) return true;
     try {
-      try { setup({ storekitMode: "STOREKIT2_MODE" }); } catch {}
       const connected = await initConnection();
       connectedRef.current = !!connected;
+      // Attach the global listeners only once after we connect
+      if (connected && !updateSubRef.current) {
+        updateSubRef.current = purchaseUpdatedListener(async (purchase: any) => {
+          console.log("[IAP] purchaseUpdatedListener:", purchase?.productId || purchase?.id);
+          try {
+            await finishTransaction({ purchase, isConsumable: false });
+          } catch (e) {
+            console.log("[IAP] finishTransaction error:", e);
+          }
+          if (pendingPurchaseResolveRef.current) {
+            pendingPurchaseResolveRef.current(purchase);
+            pendingPurchaseResolveRef.current = null;
+            pendingPurchaseRejectRef.current = null;
+          }
+        });
+        errorSubRef.current = purchaseErrorListener((err: any) => {
+          console.log("[IAP] purchaseErrorListener:", err?.code, err?.message);
+          if (pendingPurchaseRejectRef.current) {
+            pendingPurchaseRejectRef.current(err);
+            pendingPurchaseResolveRef.current = null;
+            pendingPurchaseRejectRef.current = null;
+          }
+        });
+      }
       return !!connected;
     } catch (e: any) {
       console.log("[IAP] initConnection error:", e?.message);
       return false;
     }
+  };
+
+  // Fetch subscription products using v15 API with retry
+  const doFetchProducts = async (attempts = 3): Promise<any[]> => {
+    for (let i = 0; i < attempts; i++) {
+      try {
+        const result: any = await fetchProducts({ skus: IAP_SKUS, type: "subs" } as any);
+        // v15 returns either an array directly, or an object with subscriptions/products
+        let list: any[] = [];
+        if (Array.isArray(result)) {
+          list = result;
+        } else if (result && typeof result === "object") {
+          list = result.subscriptions || result.products || result.items || [];
+        }
+        console.log(`[IAP] fetchProducts attempt ${i + 1}: got ${list.length} items`);
+        if (list.length > 0) return list;
+      } catch (e: any) {
+        console.log(`[IAP] fetchProducts attempt ${i + 1} error:`, e?.message);
+      }
+      if (i < attempts - 1) await sleep(800 * (i + 1));
+    }
+    return [];
   };
 
   const initIAP = async () => {
@@ -96,7 +137,7 @@ export function useNativeIAP() {
         setAvailable(false);
         return;
       }
-      const list = await fetchProducts(3);
+      const list = await doFetchProducts(3);
       setProducts(list);
       productsRef.current = list;
       setAvailable(list.length > 0);
@@ -111,7 +152,6 @@ export function useNativeIAP() {
   const purchase = useCallback(async (productId: string): Promise<any | null> => {
     setPurchasing(true);
     try {
-      // 1. Make sure StoreKit is connected
       const connected = await ensureConnection();
       if (!connected) {
         setPurchasing(false);
@@ -122,11 +162,11 @@ export function useNativeIAP() {
         return null;
       }
 
-      // 2. Make sure products are loaded; refetch on-demand if they aren't yet
+      // Refetch products if we don't have them
       let list = productsRef.current;
       if (!list || list.length === 0) {
-        console.log("[IAP] Products not loaded yet, fetching on demand...");
-        list = await fetchProducts(3);
+        console.log("[IAP] Products empty at purchase time, refetching...");
+        list = await doFetchProducts(3);
         if (list.length > 0) {
           setProducts(list);
           productsRef.current = list;
@@ -143,7 +183,6 @@ export function useNativeIAP() {
         return null;
       }
 
-      // 3. Verify the specific product we want exists in the loaded list
       const product = list.find((p: any) => p?.productId === productId || p?.id === productId);
       if (!product) {
         setPurchasing(false);
@@ -154,38 +193,67 @@ export function useNativeIAP() {
         return null;
       }
 
-      // 4. Build subscription offer args (required for StoreKit 2 + introductory offers)
-      const offerToken = product?.subscriptionOfferDetails?.[0]?.offerToken;
-      const args: any = { sku: productId };
-      if (offerToken) {
-        args.subscriptionOffers = [{ sku: productId, offerToken }];
-      }
+      // Set up a promise that will be resolved by the global listeners
+      const purchasePromise = new Promise<any>((resolve, reject) => {
+        pendingPurchaseResolveRef.current = resolve;
+        pendingPurchaseRejectRef.current = reject;
+      });
 
-      // 5. Trigger the native purchase sheet
-      const result: any = await requestSubscription(args);
-      if (result) {
-        try { await finishTransaction({ purchase: result, isConsumable: false }); } catch {}
+      // v15 API: requestPurchase with platform-namespaced sku
+      try {
+        await requestPurchase({
+          request: {
+            ios: { sku: productId },
+            android: { skus: [productId] },
+          },
+          type: "subs",
+        } as any);
+      } catch (reqErr: any) {
+        // requestPurchase itself can reject for user cancel before the listener fires
+        pendingPurchaseResolveRef.current = null;
+        pendingPurchaseRejectRef.current = null;
         setPurchasing(false);
-        // Return the raw purchase result so the caller can extract the real
-        // transactionId and transactionReceipt for backend verification.
-        return result;
-      }
-      setPurchasing(false);
-      return null;
-    } catch (e: any) {
-      setPurchasing(false);
-      const msg = e?.message || "";
-      // Silently swallow user-initiated cancellations - never show an error
-      if (
-        e?.code === "E_USER_CANCELLED" ||
-        e?.code === "E_DEFERRED" ||
-        msg.toLowerCase().includes("cancel") ||
-        msg.toLowerCase().includes("dismiss")
-      ) {
+        const msg = reqErr?.message || "";
+        if (
+          reqErr?.code === "E_USER_CANCELLED" ||
+          reqErr?.code === "E_DEFERRED" ||
+          msg.toLowerCase().includes("cancel") ||
+          msg.toLowerCase().includes("dismiss")
+        ) {
+          return null;
+        }
+        console.log("[IAP] requestPurchase error:", reqErr?.code, msg);
+        Alert.alert("Purchase Error", msg || "Could not complete purchase. Please try again.");
         return null;
       }
-      console.log("[IAP] Purchase error:", e?.code, msg);
-      Alert.alert("Purchase Error", msg || "Could not complete purchase. Please try again.");
+
+      // Wait for listener to fire (or timeout after 5 min for safety)
+      const timeoutPromise = new Promise<any>((_, reject) =>
+        setTimeout(() => reject(new Error("Purchase timeout")), 300_000)
+      );
+
+      try {
+        const result = await Promise.race([purchasePromise, timeoutPromise]);
+        setPurchasing(false);
+        return result;
+      } catch (listenerErr: any) {
+        setPurchasing(false);
+        const msg = listenerErr?.message || "";
+        if (
+          listenerErr?.code === "E_USER_CANCELLED" ||
+          listenerErr?.code === "E_DEFERRED" ||
+          msg.toLowerCase().includes("cancel") ||
+          msg.toLowerCase().includes("dismiss")
+        ) {
+          return null;
+        }
+        console.log("[IAP] Purchase listener error:", listenerErr?.code, msg);
+        Alert.alert("Purchase Error", msg || "Could not complete purchase.");
+        return null;
+      }
+    } catch (e: any) {
+      setPurchasing(false);
+      console.log("[IAP] Outer purchase error:", e?.message);
       return null;
     }
   }, []);
@@ -193,7 +261,6 @@ export function useNativeIAP() {
   const restore = useCallback(async (): Promise<boolean> => {
     setPurchasing(true);
     try {
-      // Restore should work even when products are unavailable - it queries existing entitlements
       await ensureConnection();
       const purchases = await getAvailablePurchases();
       setPurchasing(false);
