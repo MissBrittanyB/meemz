@@ -63,12 +63,36 @@ export default function PricingScreen() {
       const plansRes = await axios.get(`${API_URL}/api/subscriptions/plans`);
       setPlans(plansRes.data);
 
+      // Check backend subscription status if signed in
       if (storedToken) {
-        const statusRes = await axios.get(
-          `${API_URL}/api/subscriptions/status`,
-          { headers: { Authorization: `Bearer ${storedToken}` } }
-        );
-        setSubStatus(statusRes.data);
+        try {
+          const statusRes = await axios.get(
+            `${API_URL}/api/subscriptions/status`,
+            { headers: { Authorization: `Bearer ${storedToken}` } }
+          );
+          setSubStatus(statusRes.data);
+        } catch (e) {
+          console.log("Could not fetch backend sub status", e);
+        }
+      }
+
+      // Apple Guideline 5.1.1: also check LOCAL entitlement so anonymous users
+      // see their subscription as active without needing an account
+      try {
+        const localRaw = await AsyncStorage.getItem("meemz_local_entitlement");
+        if (localRaw) {
+          const local = JSON.parse(localRaw);
+          if (local?.is_premium) {
+            setSubStatus((current) => current?.is_premium ? current : {
+              status: "active",
+              plan_id: local.plan_id || "monthly",
+              trial_available: false,
+              is_premium: true,
+            });
+          }
+        }
+      } catch (e) {
+        console.log("Could not read local entitlement", e);
       }
     } catch (error) {
       console.error("Error loading pricing:", error);
@@ -134,16 +158,10 @@ export default function PricingScreen() {
     }
   };
 
-  // Apple IAP purchase
+  // Apple IAP purchase - Per Apple Guideline 5.1.1, purchase MUST NOT require account creation.
+  // Anonymous users can subscribe; entitlement is stored locally and offered to be
+  // linked to an account afterward (optional, for cross-device access only).
   const subscribeWithApple = async () => {
-    if (!token) {
-      Alert.alert("Sign Up Required", "Create an account first to subscribe!", [
-        { text: "Cancel", style: "cancel" },
-        { text: "Sign Up", onPress: () => router.push("/(tabs)/profile") },
-      ]);
-      return;
-    }
-
     setProcessing(true);
     try {
       const productId = PLAN_TO_PRODUCT[selectedPlan];
@@ -156,7 +174,6 @@ export default function PricingScreen() {
       const purchaseResult: any = await purchase(productId);
       if (purchaseResult) {
         // Extract the REAL transaction id + receipt from StoreKit
-        // (react-native-iap exposes both transactionId and transactionReceipt)
         const transactionId =
           purchaseResult.transactionId ||
           purchaseResult.id ||
@@ -172,29 +189,62 @@ export default function PricingScreen() {
           purchaseResult.originalTransactionId ||
           transactionId;
 
-        // Server-side verification with Apple (sandbox/production aware)
+        // ALWAYS persist entitlement locally so the user can use the subscription
+        // on this device immediately, without needing an account (Apple 5.1.1)
         try {
-          await axios.post(
-            `${API_URL}/api/subscriptions/apple/verify`,
-            {
-              product_id: productId,
-              transaction_id: transactionId,
-              original_transaction_id: originalTransactionId,
-              receipt_data: transactionReceipt,
-            },
-            { headers: { Authorization: `Bearer ${token}` } }
+          const localEntitlement = {
+            product_id: productId,
+            plan_id: selectedPlan,
+            transaction_id: transactionId,
+            original_transaction_id: originalTransactionId,
+            receipt: transactionReceipt,
+            purchased_at: new Date().toISOString(),
+            is_premium: true,
+          };
+          await AsyncStorage.setItem(
+            "meemz_local_entitlement",
+            JSON.stringify(localEntitlement)
           );
-        } catch (verifyErr: any) {
-          console.log("[IAP] Backend verify error:", verifyErr?.message);
+        } catch (e) {
+          console.log("Failed to persist local entitlement", e);
         }
 
+        // If user IS already signed in, also sync with backend for cross-device use
+        if (token) {
+          try {
+            await axios.post(
+              `${API_URL}/api/subscriptions/apple/verify`,
+              {
+                product_id: productId,
+                transaction_id: transactionId,
+                original_transaction_id: originalTransactionId,
+                receipt_data: transactionReceipt,
+              },
+              { headers: { Authorization: `Bearer ${token}` } }
+            );
+          } catch (verifyErr: any) {
+            console.log("[IAP] Backend verify error:", verifyErr?.message);
+          }
+        }
+
+        // Update UI - user is now premium on this device
         setSubStatus({
           status: "active",
           plan_id: selectedPlan,
           trial_available: false,
           is_premium: true,
         });
-        Alert.alert("Payment Successful!", "Welcome to meemz premium! Enjoy unlimited access.");
+
+        // Post-purchase UX: thank them, and OPTIONALLY offer account linking
+        if (token) {
+          Alert.alert("Payment Successful!", "Welcome to meemz premium! Enjoy unlimited access.");
+        } else {
+          Alert.alert(
+            "Payment Successful!",
+            "Welcome to meemz premium! Enjoy unlimited access on this device.\n\nWant to use your subscription on other devices too? You can optionally create a free account anytime in the Profile tab to link this purchase.",
+            [{ text: "OK" }]
+          );
+        }
       }
     } catch (error: any) {
       if (!error?.message?.includes("cancel")) {
@@ -205,17 +255,37 @@ export default function PricingScreen() {
     }
   };
 
-  // Restore purchases
+  // Restore purchases - Per Apple Guideline 5.1.1 / 3.1.1, this MUST work without
+  // requiring account creation (StoreKit queries the Apple ID's entitlements directly).
   const handleRestore = async () => {
-    if (!token) {
-      Alert.alert("Sign In Required", "Please sign in to restore purchases.");
-      return;
-    }
     setProcessing(true);
     try {
       const success = await restore();
       if (success) {
-        await loadData();
+        // Persist local entitlement so anonymous users see active premium status
+        try {
+          const localEntitlement = {
+            plan_id: selectedPlan,
+            restored_at: new Date().toISOString(),
+            is_premium: true,
+          };
+          await AsyncStorage.setItem(
+            "meemz_local_entitlement",
+            JSON.stringify(localEntitlement)
+          );
+        } catch {}
+
+        setSubStatus({
+          status: "active",
+          plan_id: selectedPlan,
+          trial_available: false,
+          is_premium: true,
+        });
+
+        // If signed in, also refresh backend status
+        if (token) {
+          await loadData();
+        }
         Alert.alert("Restored!", "Your subscription has been restored.");
       }
     } catch {}
