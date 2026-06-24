@@ -18,6 +18,7 @@ import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
+import { router } from "expo-router";
 
 // Lazy-load FileSystem for video uploads
 let FileSystemLegacy: any = null;
@@ -203,6 +204,29 @@ export default function UploadScreen() {
       return;
     }
 
+    // Per Apple Guideline 5.1.1, prompt for OPTIONAL account creation only when
+    // the user actually tries to submit an upload (uploads are tied to a profile).
+    // Account is required to publish to a profile, but is offered as a friendly
+    // suggestion rather than a blocking gate up-front.
+    if (!isLoggedIn && !isAdmin) {
+      if (Platform.OS === "web") {
+        const ok = window.confirm(
+          "Uploads are linked to your profile so others can find your memez. Create a free account now?"
+        );
+        if (ok) router.push("/(tabs)/profile");
+      } else {
+        Alert.alert(
+          "Sign In to Publish",
+          "Uploads are linked to your profile so others can find your memez. Create a free account now?",
+          [
+            { text: "Later", style: "cancel" },
+            { text: "Sign Up", onPress: () => router.push("/(tabs)/profile") },
+          ]
+        );
+      }
+      return;
+    }
+
     setUploading(true);
 
     try {
@@ -267,84 +291,11 @@ export default function UploadScreen() {
     }
   };
 
-  // Not logged in and not admin - show login options
-  if (!isLoggedIn && !isAdmin) {
-    return (
-      <SafeAreaView style={styles.container} edges={["top"]}>
-        <View style={styles.loginContainer}>
-          <View style={styles.lockIconContainer}>
-            <Ionicons name="cloud-upload" size={60} color="#FF7A1A" />
-          </View>
-          <Text style={styles.loginTitle}>Upload Meemzs</Text>
-          <Text style={styles.loginSubtitle}>
-            Sign in to upload meemz to your profile, or use admin access for global uploads
-          </Text>
+  // Per Apple Guideline 5.1.1, do NOT block access to the upload screen for
+  // anonymous users. Allow them to see and prepare an upload; the actual upload
+  // submit will offer optional sign-up via `uploadMeme()` if no token exists.
 
-          <TouchableOpacity
-            style={styles.signInButton}
-            onPress={() => {
-              // Navigate to profile tab for login
-              if (Platform.OS === "web") {
-                window.alert("Go to Profile tab to sign in or create an account");
-              } else {
-                Alert.alert("Sign In", "Go to the Profile tab to sign in or create an account");
-              }
-            }}
-          >
-            <Ionicons name="person" size={24} color="#fff" />
-            <Text style={styles.signInButtonText}>Sign In / Create Account</Text>
-          </TouchableOpacity>
-
-          <View style={styles.divider}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>OR</Text>
-            <View style={styles.dividerLine} />
-          </View>
-
-          <Text style={styles.adminLabel}>Admin Access</Text>
-          <View style={styles.passwordContainer}>
-            <TextInput
-              style={styles.passwordInput}
-              placeholder="Enter admin password"
-              placeholderTextColor="#666"
-              value={passwordInput}
-              onChangeText={(text) => {
-                setPasswordInput(text);
-                setPasswordError(false);
-              }}
-              secureTextEntry={!showPassword}
-              autoCapitalize="none"
-            />
-            <TouchableOpacity
-              style={styles.eyeButton}
-              onPress={() => setShowPassword(!showPassword)}
-            >
-              <Ionicons
-                name={showPassword ? "eye-off" : "eye"}
-                size={24}
-                color="#666"
-              />
-            </TouchableOpacity>
-          </View>
-
-          {passwordError && (
-            <Text style={styles.errorText}>Incorrect password. Try again.</Text>
-          )}
-
-          <TouchableOpacity
-            style={[styles.adminButton, !passwordInput && styles.buttonDisabled]}
-            onPress={handleAdminLogin}
-            disabled={!passwordInput}
-          >
-            <Ionicons name="key" size={20} color="#fff" />
-            <Text style={styles.adminButtonText}>Admin Access</Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  // Upload screen (authenticated)
+  // Upload screen (open to everyone; sign-in optional)
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       <KeyboardAvoidingView

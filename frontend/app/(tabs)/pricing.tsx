@@ -101,50 +101,9 @@ export default function PricingScreen() {
     }
   };
 
-  const startTrial = async () => {
-    // Trial is now handled as an introductory offer on the App Store subscription itself
-    // (configured in App Store Connect). Apple Guideline 3.1.2(c) prohibits a separate
-    // free-trial button on the purchase screen. This function is retained for backward
-    // compatibility with any deep links but should no longer be invoked from the UI.
-    if (!token) {
-      Alert.alert(
-        "Sign Up Required",
-        "Create an account first to subscribe!",
-        [
-          { text: "Cancel", style: "cancel" },
-          { text: "Sign Up", onPress: () => router.push("/(tabs)/profile") },
-        ]
-      );
-      return;
-    }
-
-    setProcessing(true);
-    try {
-      const res = await axios.post(
-        `${API_URL}/api/subscriptions/start-trial`,
-        {},
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      setSubStatus({
-        status: "trial",
-        plan_id: "trial",
-        trial_available: false,
-        is_premium: true,
-        trial_end: res.data.trial_end,
-      });
-      Alert.alert(
-        "Trial Started!",
-        "Enjoy 7 days of unlimited meemz access!"
-      );
-    } catch (error: any) {
-      Alert.alert(
-        "Error",
-        error.response?.data?.detail || "Could not start trial"
-      );
-    } finally {
-      setProcessing(false);
-    }
-  };
+  // Note: startTrial removed - per Apple Guideline 3.1.2(c), free trials are now
+  // delivered as introductory offers on the App Store subscriptions themselves
+  // (configured in App Store Connect), shown on Apple's native purchase sheet.
 
   // Route to correct payment method.
   // Apple Guideline 3.1.1: iOS MUST use In-App Purchase only - never fall back to Stripe.
@@ -295,24 +254,13 @@ export default function PricingScreen() {
   // ============ STRIPE PURCHASE (Web/Android only) ============
   // Per Apple Guideline 3.1.1, this MUST NEVER be invoked on iOS.
   // iOS subscriptions are processed exclusively via Apple In-App Purchase.
+  // Per Apple Guideline 5.1.1, account creation is NOT a prerequisite for purchase.
   const subscribeWithStripe = async () => {
     if (isIOS) {
       // Hard guard - should be unreachable but protects against future regressions
       Alert.alert(
         "Use In-App Purchase",
         "On iOS, subscriptions are processed through the App Store. Please use the Subscribe button."
-      );
-      return;
-    }
-
-    if (!token) {
-      Alert.alert(
-        "Sign Up Required",
-        "Create an account first to subscribe!",
-        [
-          { text: "Cancel", style: "cancel" },
-          { text: "Sign Up", onPress: () => router.push("/(tabs)/profile") },
-        ]
       );
       return;
     }
@@ -324,10 +272,13 @@ export default function PricingScreen() {
         originUrl = window.location.origin;
       }
 
+      const headers: any = { "Content-Type": "application/json" };
+      if (token) headers.Authorization = `Bearer ${token}`;
+
       const res = await axios.post(
         `${API_URL}/api/subscriptions/create-checkout?plan_id=${selectedPlan}&origin_url=${encodeURIComponent(originUrl)}`,
         {},
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers }
       );
 
       const checkoutUrl = res.data.url;

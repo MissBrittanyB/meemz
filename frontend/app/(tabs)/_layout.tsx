@@ -65,7 +65,6 @@ export default function TabLayout() {
         name="pricing"
         options={{
           title: "Premium",
-          href: null,
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="diamond" size={size} color={color} />
           ),
