@@ -67,7 +67,7 @@ export default function ExploreScreen() {
       await axios.post(`${API_URL}/api/users/${username}/block`, {}, { headers: { Authorization: `Bearer ${t}` } });
       Alert.alert("User Blocked", `@${username} has been blocked. Their content will no longer appear in your feed.`);
       setSelectedMeme(null);
-      fetchMemes();
+      fetchExploreMemes();
     } catch { Alert.alert("Error", "Could not block user."); }
   };
 
@@ -415,17 +415,36 @@ export default function ExploreScreen() {
                       </Text>
                     </View>
                     {selectedMeme.username && (
-                      <TouchableOpacity
-                        onPress={() => {
-                          setSelectedMeme(null);
-                          setModalVisible(false);
-                          router.push(`/user/${encodeURIComponent(selectedMeme.username!)}`);
-                        }}
-                      >
-                        <Text style={[styles.modalUsername, { textDecorationLine: "underline" }]}>
-                          by @{selectedMeme.username}
-                        </Text>
-                      </TouchableOpacity>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                        <TouchableOpacity
+                          onPress={() => {
+                            setSelectedMeme(null);
+                            setModalVisible(false);
+                            router.push(`/user/${encodeURIComponent(selectedMeme.username!)}`);
+                          }}
+                        >
+                          <Text style={[styles.modalUsername, { textDecorationLine: "underline" }]}>
+                            by @{selectedMeme.username}
+                          </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() => {
+                            Alert.alert(
+                              "Block @" + selectedMeme.username,
+                              "Their content will be removed from your feed and future interactions will be prevented. Our team is notified for review.",
+                              [
+                                { text: "Cancel", style: "cancel" },
+                                { text: "Block", style: "destructive", onPress: () => blockUser(selectedMeme.username!) },
+                              ]
+                            );
+                          }}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          style={{ padding: 4 }}
+                          accessibilityLabel={`Block user @${selectedMeme.username}`}
+                        >
+                          <Ionicons name="ban-outline" size={16} color="#E74C3C" />
+                        </TouchableOpacity>
+                      </View>
                     )}
                   </View>
                 </View>

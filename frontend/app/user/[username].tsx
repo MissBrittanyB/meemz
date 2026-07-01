@@ -43,6 +43,7 @@ interface UserProfile {
   followers_count: number;
   following_count: number;
   is_following: boolean;
+  is_blocked?: boolean;
 }
 
 interface Meme {
@@ -67,6 +68,7 @@ export default function UserProfileScreen() {
   const [memes, setMemes] = useState<Meme[]>([]);
   const [loading, setLoading] = useState(true);
   const [followLoading, setFollowLoading] = useState(false);
+  const [blockLoading, setBlockLoading] = useState(false);
   const [selectedMeme, setSelectedMeme] = useState<Meme | null>(null);
   const [fullMeme, setFullMeme] = useState<Meme | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -132,6 +134,68 @@ export default function UserProfileScreen() {
       Alert.alert("Error", msg);
     } finally {
       setFollowLoading(false);
+    }
+  };
+
+  const toggleBlock = async () => {
+    if (!profile) return;
+    const token = await AsyncStorage.getItem("memevault_token");
+    if (!token) {
+      Alert.alert("Sign In Required", "Please sign in to block users.");
+      return;
+    }
+
+    const isBlocked = profile.is_blocked === true;
+    const doBlock = async () => {
+      setBlockLoading(true);
+      try {
+        if (isBlocked) {
+          await axios.delete(
+            `${API_URL}/api/users/${encodeURIComponent(profile.username)}/block`,
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+          setProfile((prev) => (prev ? { ...prev, is_blocked: false } : prev));
+          Alert.alert("User Unblocked", `@${profile.username} has been unblocked.`);
+        } else {
+          await axios.post(
+            `${API_URL}/api/users/${encodeURIComponent(profile.username)}/block`,
+            {},
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+          setProfile((prev) =>
+            prev ? { ...prev, is_blocked: true, is_following: false } : prev
+          );
+          setMemes([]);
+          Alert.alert(
+            "User Blocked",
+            `@${profile.username} has been blocked. Their content will no longer appear in your feeds and future interactions are prevented. Our team is notified for review.`
+          );
+        }
+      } catch (err: any) {
+        Alert.alert("Error", err?.response?.data?.detail || "Action failed. Please try again.");
+      } finally {
+        setBlockLoading(false);
+      }
+    };
+
+    if (isBlocked) {
+      Alert.alert(
+        "Unblock @" + profile.username + "?",
+        "You will see their content again and they will be able to interact with you.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Unblock", onPress: doBlock },
+        ]
+      );
+    } else {
+      Alert.alert(
+        "Block @" + profile.username + "?",
+        "Their content will be removed from your feeds and future interactions will be prevented. Our team is notified for review.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Block", style: "destructive", onPress: doBlock },
+        ]
+      );
     }
   };
 
@@ -211,7 +275,26 @@ export default function UserProfileScreen() {
           <Ionicons name="chevron-back" size={28} color="#fff" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>@{profile?.username || username}</Text>
-        <View style={{ width: 40 }} />
+        {profile ? (
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={toggleBlock}
+            disabled={blockLoading}
+            accessibilityLabel={profile.is_blocked ? "Unblock user" : "Block user"}
+          >
+            {blockLoading ? (
+              <ActivityIndicator size="small" color="#E74C3C" />
+            ) : (
+              <Ionicons
+                name={profile.is_blocked ? "ban" : "ban-outline"}
+                size={24}
+                color="#E74C3C"
+              />
+            )}
+          </TouchableOpacity>
+        ) : (
+          <View style={{ width: 40 }} />
+        )}
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false}>
@@ -269,42 +352,67 @@ export default function UserProfileScreen() {
               </View>
             )}
 
-            {/* Follow Button */}
-            <TouchableOpacity
-              style={[
-                styles.followButton,
-                profile.is_following && styles.followingButton,
-              ]}
-              onPress={toggleFollow}
-              disabled={followLoading}
-            >
-              {followLoading ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <>
-                  <Ionicons
-                    name={profile.is_following ? "checkmark" : "person-add"}
-                    size={18}
-                    color={profile.is_following ? "#FF7A1A" : "#fff"}
-                  />
-                  <Text
-                    style={[
-                      styles.followButtonText,
-                      profile.is_following && styles.followingButtonText,
-                    ]}
-                  >
-                    {profile.is_following ? "Following" : "Follow"}
-                  </Text>
-                </>
-              )}
-            </TouchableOpacity>
+            {/* Follow / Unblock Button */}
+            {profile.is_blocked ? (
+              <TouchableOpacity
+                style={[styles.followButton, styles.blockedButton]}
+                onPress={toggleBlock}
+                disabled={blockLoading}
+              >
+                {blockLoading ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <>
+                    <Ionicons name="ban" size={18} color="#fff" />
+                    <Text style={styles.followButtonText}>Unblock</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={[
+                  styles.followButton,
+                  profile.is_following && styles.followingButton,
+                ]}
+                onPress={toggleFollow}
+                disabled={followLoading}
+              >
+                {followLoading ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <>
+                    <Ionicons
+                      name={profile.is_following ? "checkmark" : "person-add"}
+                      size={18}
+                      color={profile.is_following ? "#FF7A1A" : "#fff"}
+                    />
+                    <Text
+                      style={[
+                        styles.followButtonText,
+                        profile.is_following && styles.followingButtonText,
+                      ]}
+                    >
+                      {profile.is_following ? "Following" : "Follow"}
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
           </View>
         )}
 
         {/* Memes Grid */}
         <View style={styles.memesSection}>
           <Text style={styles.sectionTitle}>Meemz</Text>
-          {memes.length === 0 && !loading ? (
+          {profile?.is_blocked ? (
+            <View style={styles.blockedContainer}>
+              <Ionicons name="ban" size={40} color="#666" />
+              <Text style={styles.blockedTitle}>You&apos;ve blocked this user</Text>
+              <Text style={styles.blockedSubtitle}>
+                Their content is hidden across meemz. Tap the ban icon above to unblock.
+              </Text>
+            </View>
+          ) : memes.length === 0 && !loading ? (
             <Text style={styles.emptyText}>No meemz yet</Text>
           ) : (
             <FlatList
@@ -513,6 +621,26 @@ const styles = StyleSheet.create({
   },
   followingButtonText: {
     color: "#FF7A1A",
+  },
+  blockedButton: {
+    backgroundColor: "#E74C3C",
+  },
+  blockedContainer: {
+    alignItems: "center",
+    paddingVertical: 60,
+    paddingHorizontal: 24,
+    gap: 12,
+  },
+  blockedTitle: {
+    color: "#fff",
+    fontSize: 18,
+    fontWeight: "700",
+  },
+  blockedSubtitle: {
+    color: "#888",
+    fontSize: 14,
+    textAlign: "center",
+    lineHeight: 20,
   },
   memesSection: {
     paddingHorizontal: 8,

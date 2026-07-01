@@ -531,16 +531,35 @@ export default function MemesScreen() {
                     {selectedMeme.category}
                   </Text>
                   {selectedMeme.username && (
-                    <TouchableOpacity
-                      onPress={() => {
-                        setSelectedMeme(null);
-                        router.push(`/user/${encodeURIComponent(selectedMeme.username!)}`);
-                      }}
-                    >
-                      <Text style={{ color: "#FF7A1A", fontSize: 13, textDecorationLine: "underline" }}>
-                        by @{selectedMeme.username}
-                      </Text>
-                    </TouchableOpacity>
+                    <>
+                      <TouchableOpacity
+                        onPress={() => {
+                          setSelectedMeme(null);
+                          router.push(`/user/${encodeURIComponent(selectedMeme.username!)}`);
+                        }}
+                      >
+                        <Text style={{ color: "#FF7A1A", fontSize: 13, textDecorationLine: "underline" }}>
+                          by @{selectedMeme.username}
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() => {
+                          Alert.alert(
+                            "Block @" + selectedMeme.username,
+                            "Their content will be removed from your feed and future interactions will be prevented. Our team is notified for review.",
+                            [
+                              { text: "Cancel", style: "cancel" },
+                              { text: "Block", style: "destructive", onPress: () => blockUser(selectedMeme.username!) },
+                            ]
+                          );
+                        }}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        style={{ padding: 4 }}
+                        accessibilityLabel={`Block user @${selectedMeme.username}`}
+                      >
+                        <Ionicons name="ban-outline" size={16} color="#E74C3C" />
+                      </TouchableOpacity>
+                    </>
                   )}
                 </View>
 

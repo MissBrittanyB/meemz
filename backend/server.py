@@ -537,7 +537,15 @@ async def get_user_profile(username: str, current_user: dict = Depends(get_curre
     if current_user:
         follow = await db.follows.find_one({"follower_id": current_user["id"], "following_id": user["id"]})
         is_following = follow is not None
-    
+
+    is_blocked = False
+    if current_user:
+        block = await db.blocked_users.find_one({
+            "blocker_id": current_user["id"],
+            "blocked_id": user["id"],
+        })
+        is_blocked = block is not None
+
     return {
         "id": user["id"],
         "username": user.get("username", ""),
@@ -550,6 +558,7 @@ async def get_user_profile(username: str, current_user: dict = Depends(get_curre
         "followers_count": followers_count,
         "following_count": following_count,
         "is_following": is_following,
+        "is_blocked": is_blocked,
         "created_at": user.get("created_at"),
     }
 
