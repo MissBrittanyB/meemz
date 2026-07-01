@@ -36,8 +36,10 @@ async function getFileSystem() {
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || "";
 
-// Admin password for non-logged-in admin uploads
-const ADMIN_PASSWORD = "Marchelle7!";
+// Admin status is now determined server-side via the authenticated user's
+// `is_admin` flag (fetched from /api/auth/me). The previous hardcoded
+// client-side ADMIN_PASSWORD has been removed for security - hardcoded
+// credentials in client JS can be extracted from the compiled IPA.
 
 interface Category {
   id: string;
@@ -50,11 +52,6 @@ export default function UploadScreen() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [token, setToken] = useState<string | null>(null);
-  
-  // Admin auth
-  const [passwordInput, setPasswordInput] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  const [passwordError, setPasswordError] = useState(false);
   
   // Upload form
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -73,45 +70,35 @@ export default function UploadScreen() {
 
   const checkAuth = async () => {
     try {
-      // Check if logged in as user
       const storedToken = await AsyncStorage.getItem("memevault_token");
-      if (storedToken) {
-        setToken(storedToken);
-        setIsLoggedIn(true);
+      if (!storedToken) {
+        setIsLoggedIn(false);
+        setIsAdmin(false);
+        setToken(null);
         return;
       }
-      
-      // Check if admin authenticated
-      const savedAdmin = await AsyncStorage.getItem("memevault_admin_auth");
-      if (savedAdmin === "true") {
-        setIsAdmin(true);
+      setToken(storedToken);
+      setIsLoggedIn(true);
+
+      // Fetch fresh admin status from the backend - the source of truth
+      // is the `is_admin` flag on the user record, not any client-stored value.
+      try {
+        const res = await axios.get(`${API_URL}/api/auth/me`, {
+          headers: { Authorization: `Bearer ${storedToken}` },
+        });
+        setIsAdmin(!!res.data?.user?.is_admin);
+      } catch (e) {
+        // Token invalid or expired - reset
+        setIsAdmin(false);
+        setIsLoggedIn(false);
+        setToken(null);
+        try { await AsyncStorage.removeItem("memevault_token"); } catch {}
       }
+
+      // Clean up legacy client-side admin flag if it exists (from old builds)
+      try { await AsyncStorage.removeItem("memevault_admin_auth"); } catch {}
     } catch (e) {
       console.error("Error checking auth:", e);
-    }
-  };
-
-  const handleAdminLogin = async () => {
-    if (passwordInput === ADMIN_PASSWORD) {
-      setIsAdmin(true);
-      setPasswordError(false);
-      try {
-        await AsyncStorage.setItem("memevault_admin_auth", "true");
-      } catch (e) {
-        console.error("Error saving auth:", e);
-      }
-    } else {
-      setPasswordError(true);
-      setPasswordInput("");
-    }
-  };
-
-  const handleAdminLogout = async () => {
-    setIsAdmin(false);
-    try {
-      await AsyncStorage.removeItem("memevault_admin_auth");
-    } catch (e) {
-      console.error("Error removing auth:", e);
     }
   };
 

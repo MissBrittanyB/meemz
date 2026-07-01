@@ -27,6 +27,7 @@ import * as Clipboard from "expo-clipboard";
 import { router } from "expo-router";
 import GradientText from "../../utils/GradientText";
 import { LinearGradient } from "expo-linear-gradient";
+import LegalTermsCheckbox from "../../components/LegalTermsCheckbox";
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || "";
 const { width } = Dimensions.get("window");
@@ -77,6 +78,7 @@ export default function ProfileScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState("");
+  const [termsAccepted, setTermsAccepted] = useState(false);
 
   // Edit profile states
   const [isEditing, setIsEditing] = useState(false);
@@ -145,6 +147,10 @@ export default function ProfileScreen() {
       setAuthError("Please fill in all fields");
       return;
     }
+    if (!termsAccepted) {
+      setAuthError("Please accept the EULA and Privacy Policy to continue");
+      return;
+    }
     setAuthLoading(true);
     setAuthError("");
     try {
@@ -169,6 +175,10 @@ export default function ProfileScreen() {
   const handleRegister = async () => {
     if (!email || !password || !username) {
       setAuthError("Please fill in all fields");
+      return;
+    }
+    if (!termsAccepted) {
+      setAuthError("Please accept the EULA and Privacy Policy to continue");
       return;
     }
     if (username.length < 3) {
@@ -488,13 +498,22 @@ export default function ProfileScreen() {
               </View>
             </View>
 
+            <LegalTermsCheckbox
+              accepted={termsAccepted}
+              onToggle={(next) => {
+                setTermsAccepted(next);
+                if (next && authError.startsWith("Please accept")) setAuthError("");
+              }}
+              mode={authMode}
+            />
+
             <TouchableOpacity
               style={[
                 styles.authButton,
-                authLoading && styles.authButtonDisabled,
+                (authLoading || !termsAccepted) && styles.authButtonDisabled,
               ]}
               onPress={authMode === "login" ? handleLogin : handleRegister}
-              disabled={authLoading}
+              disabled={authLoading || !termsAccepted}
             >
               {authLoading ? (
                 <ActivityIndicator color="#fff" />
