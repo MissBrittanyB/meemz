@@ -242,7 +242,10 @@ export default function UserProfileScreen() {
 
   const renderMemeItem = ({ item }: { item: Meme }) => {
     const itemIsGif = item.media_type === "gif" || item.thumbnail_base64?.startsWith("data:image/gif");
-    const displayUri = item.thumbnail_base64 || item.image_base64 || "";
+    // For GIFs, prefer full image_base64 so animation plays. Thumbnail is a static JPEG.
+    const displayUri = itemIsGif
+      ? (item.image_base64 || item.thumbnail_base64 || "")
+      : (item.thumbnail_base64 || item.image_base64 || "");
     return (
       <TouchableOpacity
         style={styles.memeItem}

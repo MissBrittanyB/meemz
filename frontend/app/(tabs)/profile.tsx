@@ -827,7 +827,12 @@ export default function ProfileScreen() {
                   activeOpacity={0.7}
                 >
                   <Image
-                    source={{ uri: meme.thumbnail_base64 || meme.image_base64 || "" }}
+                    source={{
+                      uri:
+                        (meme.media_type === "gif" || meme.thumbnail_base64?.startsWith("data:image/gif"))
+                          ? (meme.image_base64 || meme.thumbnail_base64 || "")
+                          : (meme.thumbnail_base64 || meme.image_base64 || ""),
+                    }}
                     style={styles.memeImage}
                     resizeMode="cover"
                   />

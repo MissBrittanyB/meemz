@@ -253,7 +253,11 @@ export default function ExploreScreen() {
 
   const renderMemeCard = ({ item, index }: { item: Meme; index: number }) => {
     const isFavorited = favorites.includes(item.id);
-    const cardUri = item.thumbnail_base64 || item.image_base64 || "";
+    const itemIsGif = item.media_type === "gif" || item.thumbnail_base64?.startsWith("data:image/gif");
+    // For GIFs, prefer full image_base64 so animation plays. Thumbnail is a static JPEG.
+    const cardUri = itemIsGif
+      ? (item.image_base64 || item.thumbnail_base64 || "")
+      : (item.thumbnail_base64 || item.image_base64 || "");
     return (
       <TouchableOpacity
         style={styles.memeCard}

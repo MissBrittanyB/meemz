@@ -274,10 +274,13 @@ class MemeResponse(BaseModel):
     media_type: str = "image"  # "image", "gif", or "video"
 
 class MemeListItem(BaseModel):
-    """Lightweight meme for list/grid views - uses thumbnail instead of full image"""
+    """Lightweight meme for list/grid views - uses thumbnail instead of full image.
+    For GIF items, image_base64 is included so the grid can display animation.
+    """
     id: str
     name: str
     thumbnail_base64: Optional[str] = None
+    image_base64: Optional[str] = None  # Only populated for GIFs (media_type == "gif")
     category: str
     tags: List[str] = []
     use_count: int = 0
@@ -513,7 +516,18 @@ async def get_user_memes(username: str, current_user: dict = Depends(get_current
         memes = await db.memes.find({"user_id": user["id"]}, projection).sort("created_at", -1).to_list(500)
     else:
         memes = await db.memes.find({"user_id": user["id"], "is_public": True}, projection).sort("created_at", -1).to_list(500)
-    
+
+    # For GIFs, load full image_base64 so the grid can display animation
+    gif_ids = [m["id"] for m in memes if m.get("media_type") == "gif"]
+    if gif_ids:
+        gif_docs = await db.memes.find(
+            {"id": {"$in": gif_ids}}, {"id": 1, "image_base64": 1}
+        ).to_list(len(gif_ids))
+        gif_map = {g["id"]: g.get("image_base64") for g in gif_docs}
+        for m in memes:
+            if m.get("media_type") == "gif":
+                m["image_base64"] = gif_map.get(m["id"])
+
     return [MemeListItem(**meme, username=user["username"]) for meme in memes]
 
 # ============ PUBLIC PROFILE + FOLLOW ENDPOINTS ============
@@ -664,7 +678,18 @@ async def get_memes(
         "image_base64": 0,
     }
     memes = await db.memes.find(query, projection).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
-    
+
+    # For GIFs, load full image_base64 so the grid can display animation
+    gif_ids = [m["id"] for m in memes if m.get("media_type") == "gif"]
+    if gif_ids:
+        gif_docs = await db.memes.find(
+            {"id": {"$in": gif_ids}}, {"id": 1, "image_base64": 1}
+        ).to_list(len(gif_ids))
+        gif_map = {g["id"]: g.get("image_base64") for g in gif_docs}
+        for m in memes:
+            if m.get("media_type") == "gif":
+                m["image_base64"] = gif_map.get(m["id"])
+
     # Get usernames for memes with user_id
     result = []
     for meme in memes:
@@ -777,7 +802,18 @@ async def explore_memes(limit: int = 20):
         {"$project": {"image_base64": 0}}
     ]
     memes = await db.memes.aggregate(pipeline).to_list(limit)
-    
+
+    # For GIFs, load full image_base64 so the grid can display animation
+    gif_ids = [m["id"] for m in memes if m.get("media_type") == "gif"]
+    if gif_ids:
+        gif_docs = await db.memes.find(
+            {"id": {"$in": gif_ids}}, {"id": 1, "image_base64": 1}
+        ).to_list(len(gif_ids))
+        gif_map = {g["id"]: g.get("image_base64") for g in gif_docs}
+        for m in memes:
+            if m.get("media_type") == "gif":
+                m["image_base64"] = gif_map.get(m["id"])
+
     result = []
     for meme in memes:
         username = None
