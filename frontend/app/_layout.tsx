@@ -1,8 +1,14 @@
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import { useEffect } from "react";
 import { View, StyleSheet } from "react-native";
+import { initializeMetaAppEvents } from "../utils/metaEvents";
 
 export default function RootLayout() {
+  useEffect(() => {
+    initializeMetaAppEvents();
+  }, []);
+
   return (
     <View style={styles.container}>
       <StatusBar style="light" />

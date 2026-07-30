@@ -23,6 +23,7 @@ import axios from "axios";
 import { shareMemeAction, saveToDeviceAction, copyMemeAction } from "../../utils/memeActions";
 import * as ImagePicker from "expo-image-picker";
 import * as Sharing from "expo-sharing";
+import { logMetaRegistration } from "../../utils/metaEvents";
 import * as Clipboard from "expo-clipboard";
 import { router } from "expo-router";
 import GradientText from "../../utils/GradientText";
@@ -205,6 +206,7 @@ export default function ProfileScreen() {
       setEmail("");
       setPassword("");
       setUsername("");
+      logMetaRegistration();
       if (Platform.OS !== "web") {
         Alert.alert("Welcome!", "Your account has been created!");
       }

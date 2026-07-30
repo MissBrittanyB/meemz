@@ -1,0 +1,43 @@
+{
+  "summary": "Meta App Events wire-up verification: PASSED. Static code-level checks confirm all 5 call sites exist exactly as specified: initializeMetaAppEvents() in app/_layout.tsx L9 (useEffect), logMetaRegistration() in app/(tabs)/profile.tsx L209 (inside handleRegister try after successful register), logMetaSubscriptionPurchase(selectedPlan) in app/(tabs)/pricing.tsx L197 (after IAP purchase success), logMetaMemeSaved(meme.id, meme.media_type) in utils/memeActions.ts L485 (after MediaLibrary.createAssetAsync), and logMetaMemeShared at 3 sites in utils/memeActions.ts (L367 mp4, L404 gif-fallback, L431 generic share). utils/metaEvents.ts (web no-op) and utils/metaEvents.native.ts (FBSDK impl) both export the same 5 function signatures; web module was transpiled and required in Node — all 5 exports are callable and return undefined without throwing. app.config.js correctly merges plugins from app.json: with env vars UNSET, plugin count == baseline (5) and metaAppEventsConfigured=false; with EXPO_PUBLIC_META_APP_ID and EXPO_PUBLIC_META_CLIENT_TOKEN SET, plugin count == baseline+1 (6), the appended react-native-fbsdk-next plugin block contains appID, clientToken, displayName='meemz', scheme='fb<appID>', isAutoInitEnabled=true, autoLogAppEventsEnabled=true, advertiserIDCollectionEnabled=false, and metaAppEventsConfigured=true. package.json includes react-native-fbsdk-next@^13.4.3 and node_modules/react-native-fbsdk-next resolves to installed version 13.4.3. Backend regression suite (test_meta_events_regression.py + prior test_gif_and_regression.py) = 14 passed / 2 skipped (both skips are data-dependent: no GIFs currently in first 50 memes; prior iteration already proved GIF hydration on real data). Regression coverage: POST /api/auth/register returns 200 with access_token+user (email/username correctly lowercased), POST /api/memes admin create returns 200 with id + media_type='gif', POST /api/subscriptions/apple/verify rejects empty body (422) and bogus receipt (400) — contract unchanged. Expo web preview loads (HTTP 200, /welcome community-guidelines screen rendered) with zero page errors and no red-screen — confirms the web platform-extension fallback (metaEvents.ts no-op) is being picked up by Metro instead of the native module (as expected). CONSTRAINT PER SPEC: actual Meta event dispatch is NOT verifiable in this sandbox — react-native-fbsdk-next requires a real native EAS build with the FB SDK linked; it cannot run in Expo Go or the web preview. This is called out and accepted by the reviewer.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_meta_events_regression.py",
+    "/app/backend/tests/test_gif_and_regression.py",
+    "/app/backend/tests/conftest.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "No code changes required — Meta App Events wire-up is correct. When ready to enable dispatch, set EXPO_PUBLIC_META_APP_ID and EXPO_PUBLIC_META_CLIENT_TOKEN before running `eas build` (or `expo prebuild`) so app.config.js appends the react-native-fbsdk-next config plugin (validated: without env vars the plugin is NOT injected, keeping web/Expo-Go dev builds unaffected).",
+    "Runtime validation of actual FB event dispatch must be done on a real device (EAS internal-distribution or TestFlight build) using Meta Events Manager > Test Events. This CANNOT be validated in Expo Go or web preview by design.",
+    "Pre-existing lint warnings in profile.tsx (react-hooks/exhaustive-deps L95/L144, no-require-imports L398) and pricing.tsx (unused router/iapAvailable/iapPurchasing) were LEFT UNTOUCHED per explicit reviewer instruction. Main agent may address separately."
+  ],
+  "critical_code_review_comments": [
+    "metaEvents.native.ts uses static top-of-file `import { AppEventsLogger, Settings } from 'react-native-fbsdk-next'`. Metro will still resolve this fine when the file is picked (native build) because the package IS in dependencies. For safety in case the native module is loaded in an environment where FBSDK linking failed, safelyLog() wraps each call in try/catch — good defensive pattern.",
+    "logMetaSubscriptionPurchase fires BOTH AppEvents.Subscribe AND AppEventsLogger.logPurchase (metaEvents.native.ts L67-L80). This is intentional (Subscribe for Meta subscription attribution, logPurchase for standard purchase revenue) but be aware Meta Events Manager will show two events per real purchase; if that becomes noise, consider dropping the Subscribe call in favor of just logPurchase with a subscription content_type.",
+    "The web fallback metaEvents.ts uses underscore-prefixed unused params (_memeId, _mediaType) — correct TS pattern, no lint noise.",
+    "Metro platform-extension resolution is the correct approach: metaEvents.native.ts is picked on iOS/Android, metaEvents.ts is picked on web/other. Confirmed working — the app loads on web with the native FBSDK never imported (no 'Cannot find native module' error).",
+    "app.config.js relies on `process.env.EXPO_PUBLIC_META_APP_ID` at BUILD time (when eas build reads the config). Runtime env checks in the JS bundle would need Constants.expoConfig.extra.metaAppEventsConfigured (already exposed via extra — good). If you want to gate calls at runtime as a second safety net, the initializeMetaAppEvents call could optionally read that flag; currently it always calls Settings.initializeSDK() which is safe (FBSDK guards multiple init calls)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_meta_events_regression.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (14/14 executed passed; 2 skipped due to no GIFs currently in feed — data-dependent)",
+    "frontend": "100% static + web-load smoke (5/5 call sites + 5/5 exports + app.config.js merge in both branches + web preview loads clean). Runtime FBSDK dispatch NOT testable here per spec."
+  },
+  "seed_data_creation": "One test user registered via /api/auth/register (email prefix TEST_meta_<uuid>@example.com) — no cleanup performed (short-lived test account, harmless). One TEST_meta_<uuid> meme created and immediately deleted in test teardown.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Meta App Events wire-up is verified static + at the app.config.js merge level. Regression suite lives at /app/backend/tests/{test_meta_events_regression.py,test_gif_and_regression.py}. To re-run: EXPO_PUBLIC_BACKEND_URL=https://meme-type.preview.emergentagent.com pytest /app/backend/tests -v. Admin creds: brittanyb@thebrandingbar.com / Marchelle7! (missbrittanyb, is_admin=true). To test app.config.js env branching: `EXPO_PUBLIC_META_APP_ID=X EXPO_PUBLIC_META_CLIENT_TOKEN=Y node -e \"console.log(require('/app/frontend/app.config.js'))\"`. DO NOT attempt to test actual Meta dispatch in the sandbox — requires EAS native build.",
+  "rca_of_issue": "N/A — this iteration is a wire-up verification, not a bug fix. All acceptance criteria from the review request were met."
+}

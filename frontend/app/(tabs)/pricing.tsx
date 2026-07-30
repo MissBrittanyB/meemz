@@ -18,6 +18,7 @@ import { router } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import GradientText from "../../utils/GradientText";
 import { useNativeIAP, PLAN_TO_PRODUCT } from "../../utils/useNativeIAP";
+import { logMetaSubscriptionPurchase } from "../../utils/metaEvents";
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || "";
 
@@ -193,6 +194,7 @@ export default function PricingScreen() {
           trial_available: false,
           is_premium: true,
         });
+        logMetaSubscriptionPurchase(selectedPlan);
 
         // Post-purchase UX: thank them, and OPTIONALLY offer account linking
         if (token) {

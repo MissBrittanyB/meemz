@@ -3,6 +3,7 @@ import * as FileSystem from "expo-file-system/legacy";
 import * as MediaLibrary from "expo-media-library";
 import * as Sharing from "expo-sharing";
 import * as Clipboard from "expo-clipboard";
+import { logMetaMemeSaved, logMetaMemeShared } from "./metaEvents";
 
 interface MemeData {
   id: string;
@@ -363,6 +364,7 @@ export async function shareMemeAction(meme: MemeData): Promise<boolean> {
               setTimeout(() => cleanupFile(mp4FileUri), 60000);
               
               mp4Success = true;
+              logMetaMemeShared(meme.id, "video");
               console.log("[memeActions] MP4 shared successfully!");
               break; // Exit retry loop
             }
@@ -399,6 +401,7 @@ export async function shareMemeAction(meme: MemeData): Promise<boolean> {
         UTI: "com.compuserve.gif",
       });
       setTimeout(() => cleanupFile(fileUri), 60000);
+      logMetaMemeShared(meme.id, "gif");
       
       // Warn user about animation limitation
       setTimeout(() => {
@@ -425,6 +428,7 @@ export async function shareMemeAction(meme: MemeData): Promise<boolean> {
     });
 
     setTimeout(() => cleanupFile(fileUri), 60000);
+    logMetaMemeShared(meme.id, meme.media_type);
 
     return true;
   } catch (error: any) {
@@ -478,6 +482,7 @@ export async function saveToDeviceAction(meme: MemeData): Promise<boolean> {
 
     const asset = await MediaLibrary.createAssetAsync(fileUri);
     console.log("[memeActions] Asset created:", asset.uri);
+    logMetaMemeSaved(meme.id, meme.media_type);
 
     // Cleanup temp file
     await cleanupFile(fileUri);
