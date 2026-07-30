@@ -1,0 +1,36 @@
+{
+  "summary": "EAS iOS Meta (FBSDK) env-var config validation PASSED. 16/16 pytest cases green. Verified: (a) /app/frontend/eas.json JSON is well-formed; production.env and preview.env each contain EXPO_PUBLIC_META_APP_ID='2826139691089206' and EXPO_PUBLIC_META_CLIENT_TOKEN with exact 32-char length (value never logged; sha256[:8] fingerprint used for tracing); development profile intentionally has NO meta env keys. (b) node exec of app.config.js under simulated build envs: baseline (unset) -> 5 plugins & metaConfigured=false; production env -> 6 plugins & metaConfigured=true; preview env -> 6 plugins & metaConfigured=true. In both build cases the appended react-native-fbsdk-next plugin entry has appID='2826139691089206', clientToken (32 chars), scheme='fb2826139691089206', displayName='meemz', isAutoInitEnabled=true, autoLogAppEventsEnabled=true, advertiserIDCollectionEnabled=false — satisfying Meta auto-app-activation and trial-attribution requirements. (c) Untouched fields verified: cli.version='>= 7.0.0', cli.appVersionSource='remote', development(developmentClient/distribution/ios.resourceClass/ios.simulator), preview(distribution/ios.resourceClass/ios.simulator), production(autoIncrement/ios.resourceClass/ios.simulator/ios.buildConfiguration='Release'). (d) Regression: Metro serves HTTP 200 at http://localhost:3000 with no ModuleNotFoundError; backend GET /api/memes and POST /api/auth/register respond <500. No file edits were made to eas.json, app.config.js, or app.json.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_eas_meta_config.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "app.config.js correctly gates FBSDK plugin behind BOTH env vars (Boolean(metaAppId && metaClientToken)) — safe against partial config.",
+    "Preview and production env values are identical for the meta client token; if Meta test/dev token separation is desired later, consider distinct values per profile.",
+    "Development profile has no env block — correct per requirement (dev builds will fall back to 5 plugins).",
+    "advertiserIDCollectionEnabled=false is App Store friendly (no IDFA prompt required). Confirm this matches product intent for iOS 14+ ATT strategy."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_eas_meta_config.py (new — read-only validation suite)"
+  ],
+  "success_rate": {
+    "backend": "100% (16/16 passed)",
+    "frontend": "N/A (backend-only testing per request)"
+  },
+  "seed_data_creation": "One transient TEST_-prefixed user may have been created via /api/auth/register regression call (best-effort, cleaned by TEST_ prefix convention).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "EAS iOS Meta env-var wiring is validated. Do not print the client token value — use sha256[:8] fingerprint if tracing is needed. The Meta plugin only appears when BOTH EXPO_PUBLIC_META_APP_ID and EXPO_PUBLIC_META_CLIENT_TOKEN are set in the runtime env; eas.json injects them for the preview and production build profiles only. Native validation (actual EAS build & FB SDK dispatch) is out of scope for this environment and can only be verified on a real device / TestFlight build.",
+  "rca_of_issue": "N/A — no bug present. Config validation completed successfully."
+}
