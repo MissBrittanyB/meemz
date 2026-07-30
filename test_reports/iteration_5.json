@@ -1,0 +1,35 @@
+{
+  "summary": "Verification-only run for splash-image path fix (commit 07c8d6a). ALL 8 assertions PASS. app.json contains the one-character-class fix (splash-icon.png -> splash-image.png). Prebuild in isolated /tmp copy exits 0 with 'Finished prebuild'. Generated Info.plist has all 6 Facebook keys (FacebookAppID=2826139691089206, FacebookClientToken 32 chars sha256:f6583583, FacebookDisplayName=meemz, AutoInit=true, AutoLogAppEvents=true, AdvertiserIDCollection=false), CFBundleURLSchemes contains fb2826139691089206, LSApplicationQueriesSchemes has all 4 (fbapi, fb-messenger-api, fbauth2, fbshareextension), exactly 2 SKAdNetworkIdentifier entries injected. Podfile contains 'use_native_modules!' on line 42 which will autolink react-native-fbsdk-next. app.config.js resolves to 6 plugins under production env (metaAppEventsConfigured=true) and 5 plugins under baseline (metaAppEventsConfigured=false). Regression: Metro 200, /api/memes 200 (list, 20 items), /api/auth/register 422 on empty body (validates payload). git diff HEAD~1 HEAD shows exactly 1 file changed (frontend/app.json, +1 -1). No files modified during testing; tmp prebuild dir cleaned up.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "yarn.lock shows as modified in git status (uncommitted) — pre-existing dirty state, unrelated to this fix. Consider committing or reverting separately."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Fix verified end-to-end for FB Events Manager tracking. Next real signal will come from live TestFlight builds sending AppEventsLogger events to Meta Events Manager after IPA install on device. Local verification cannot simulate device install; user must ship a new TestFlight build (>=1.0.17) and confirm events appear.",
+  "rca_of_issue": "PRIOR RCA (confirmed): expo-splash-screen plugin referenced './assets/images/splash-icon.png' but the file on disk is 'splash-image.png'. The ios.dangerous mod chain runs SEQUENTIALLY — the splash-screen mod threw ENOENT before the FB Info.plist mod could run, aborting the whole chain, so no FB keys were persisted, and FBSDK pod was never autolinked. Shipped IPA had 0 FB events. FIX: single-character typo correction in app.json line 44. Verified prebuild now completes and Info.plist contains all FB keys.",
+  "detailed_evidence": {
+    "assertion_1_app_json_single_line_change": "PASS — git diff HEAD~1 HEAD -- frontend/app.json shows only line 44 changed from splash-icon.png to splash-image.png. No other keys, plugins, permissions, bundle IDs, or versions altered.",
+    "assertion_2_splash_files": "PASS — /app/frontend/assets/images/splash-image.png exists (118129 bytes, PNG magic 89504e470d0a1a0a valid). /app/frontend/assets/images/splash-icon.png does NOT exist.",
+    "assertion_3_prebuild_and_infoplist": "PASS — Ran 'expo prebuild --platform ios --no-install --clean' in /tmp copy with production env vars. Exit 0, 'Finished prebuild'. Info.plist has FacebookAppID=2826139691089206, FacebookClientToken length=32 (sha256[:8]=f6583583, value NOT printed), FacebookDisplayName=meemz, FacebookAutoInitEnabled=true, FacebookAutoLogAppEventsEnabled=true, FacebookAdvertiserIDCollectionEnabled=false. CFBundleURLSchemes=[frontend, app.emergent.memetypee1fc7ef9, fb2826139691089206]. LSApplicationQueriesSchemes=[fbapi, fb-messenger-api, fbauth2, fbshareextension]. SKAdNetworkIdentifiers=[v9wttpbfk9.skadnetwork, n38lu8286q.skadnetwork] (count=2).",
+    "assertion_4_podfile_autolinking": "PASS — /tmp Podfile line 42: 'config = use_native_modules!(config_command)' present, will autolink react-native-fbsdk-next on pod install.",
+    "assertion_5_regressions": "PASS — Metro localhost:3000 HTTP 200. GET /api/memes HTTP 200, returns list of 20 items. POST /api/auth/register with empty body returns HTTP 422 with Pydantic validation errors for email/password/username (contract intact).",
+    "assertion_6_app_config_resolution": "PASS — With EXPO_PUBLIC_META_APP_ID + EXPO_PUBLIC_META_CLIENT_TOKEN set: 6 plugins [expo-router, expo-splash-screen, expo-web-browser, react-native-iap, expo-font, react-native-fbsdk-next], metaAppEventsConfigured=true. With env unset: 5 plugins (no react-native-fbsdk-next), metaAppEventsConfigured=false.",
+    "assertion_7_single_file_diff": "PASS — git diff HEAD~1 HEAD --stat: 'frontend/app.json | 2 +-, 1 file changed, 1 insertion(+), 1 deletion(-)'.",
+    "assertion_8_no_scope_creep": "PASS — No files modified during testing. Tmp prebuild dir removed. No supervisor restart. No push. No client token value printed."
+  }
+}
