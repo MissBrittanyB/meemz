@@ -38,6 +38,14 @@ import uuid
 from dotenv import load_dotenv
 from pymongo import MongoClient
 
+# We reuse the backend's own thumbnail generator so grid rendering matches
+# what the app expects. Falls back gracefully if the module can't be loaded.
+sys.path.insert(0, "/app/backend")
+try:
+    from server import generate_thumbnail  # type: ignore
+except Exception:  # pragma: no cover
+    generate_thumbnail = None  # type: ignore
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -263,6 +271,10 @@ def main():
                    help="Required for --commit. Explicit acknowledgment.")
     p.add_argument("--limit", type=int, default=0,
                    help="Optional cap on files for testing.")
+    p.add_argument("--min-size-bytes", type=int, default=0,
+                   help="Skip files smaller than this many bytes (guards against corrupt/thumbnail placeholders).")
+    p.add_argument("--clean-names", action="store_true",
+                   help="Generate readable sequential names ('Meme #N') instead of prettified filenames.")
     args = p.parse_args()
 
     if not args.dry_run and not args.commit:
@@ -302,6 +314,10 @@ def main():
         if not r.is_readable:
             report.unreadable.append(r)
             continue
+        if args.min_size_bytes and r.size_bytes < args.min_size_bytes:
+            r.error = f"below --min-size-bytes ({r.size_bytes} < {args.min_size_bytes}) — likely corrupt/thumbnail"
+            report.unreadable.append(r)
+            continue
         if r.content_hash in existing_hashes:
             report.already_in_db.append(r)
             continue
@@ -325,12 +341,17 @@ def main():
 
     if args.commit and report.to_insert:
         print(f"→ Inserting {len(report.to_insert)} memes ...")
-        for r in report.to_insert:
+        for i, r in enumerate(report.to_insert):
             raw = r.path.read_bytes()
             data_uri = f"data:{r.mime};base64,{base64.b64encode(raw).decode('ascii')}"
+            display_name = (
+                f"Meme #{before_total + i + 1}"
+                if args.clean_names
+                else r.name
+            )
             doc = {
                 "id": str(uuid.uuid4()),
-                "name": r.name,
+                "name": display_name,
                 "image_base64": data_uri,
                 "category": r.category,
                 "tags": ["imported", r.folder],
@@ -342,10 +363,20 @@ def main():
                 "source_folder": r.folder,
                 "source_filename": r.path.name,
             }
+            # Backend list endpoints project out image_base64; without a
+            # thumbnail the grid would render blank. Generate one now.
+            if generate_thumbnail is not None:
+                try:
+                    thumb = generate_thumbnail(data_uri)
+                    if thumb:
+                        doc["thumbnail_base64"] = thumb
+                except Exception as e:  # pragma: no cover
+                    print(f"  (thumbnail gen failed for {r.path.name}: {e})")
             if creator_id:
                 doc["user_id"] = creator_id
             db.memes.insert_one(doc)
             report.inserted.append(r)
+            print(f"  ✓ {display_name:20s}  [{r.folder}/{r.path.name[:50]}]")
 
         # Sync category counts
         for name in BASE_CATEGORIES:
